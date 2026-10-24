@@ -16,8 +16,12 @@ const SEED_MARKER_KEY = 'hirepilot:seeded';
  * Idempotent — only seeds once per browser.
  */
 export function seedIfEmpty() {
+  if (typeof localStorage === 'undefined') return;
   if (localStorage.getItem(SEED_MARKER_KEY)) return;
-  if (store.jobs.count() > 0) return;
+  if (store.jobs.count() > 0) {
+    localStorage.setItem(SEED_MARKER_KEY, 'true');
+    return;
+  }
 
   const jobs = createSyntheticJobs();
   for (const job of jobs) {

@@ -20,6 +20,9 @@ function createCollection(collectionName) {
   const key = STORAGE_PREFIX + collectionName;
 
   function _read() {
+    if (typeof localStorage === 'undefined') {
+      return [];
+    }
     try {
       const raw = localStorage.getItem(key);
       return raw ? JSON.parse(raw) : [];
@@ -30,6 +33,9 @@ function createCollection(collectionName) {
   }
 
   function _write(items) {
+    if (typeof localStorage === 'undefined') {
+      return;
+    }
     try {
       localStorage.setItem(key, JSON.stringify(items));
     } catch (err) {

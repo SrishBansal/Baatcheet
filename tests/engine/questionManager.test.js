@@ -59,4 +59,34 @@ describe('QuestionManager', () => {
     expect(qm.getActivePrompt().isFollowUp).toBe(false);
     expect(qm.getActivePrompt().text).toBe('Second Question');
   });
+
+  describe('skipQuestion', () => {
+    it('marks current question as skipped and disallows follow-ups', () => {
+      const qm = new QuestionManager(sampleQuestions);
+      expect(qm.canFollowUp()).toBe(true);
+
+      const skipped = qm.skipQuestion();
+      expect(skipped.id).toBe('q1');
+      expect(qm.isQuestionSkipped('q1')).toBe(true);
+      // Follow-up must be strictly disallowed for skipped question
+      expect(qm.canFollowUp()).toBe(false);
+      expect(() => qm.recordFollowUp('Not allowed')).toThrow(/Cannot ask follow-up/);
+    });
+
+    it('clears active follow-up and advances cleanly after skip', () => {
+      const qm = new QuestionManager(sampleQuestions);
+      qm.recordFollowUp('First follow-up');
+      expect(qm.getActivePrompt().isFollowUp).toBe(true);
+
+      // Skip current question while follow-up is active
+      qm.skipQuestion();
+      expect(qm.getActivePrompt().isFollowUp).toBe(false);
+
+      // Advance to next question in sequence
+      const next = qm.advanceQuestion();
+      expect(next.id).toBe('q2');
+      expect(qm.isQuestionSkipped('q2')).toBe(false);
+      expect(qm.canFollowUp()).toBe(true);
+    });
+  });
 });

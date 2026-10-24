@@ -33,6 +33,8 @@ export const InterviewEvent = Object.freeze({
   REQUEST_REPEAT: 'REQUEST_REPEAT',
   REQUEST_CLARIFY: 'REQUEST_CLARIFY',
   SILENCE_TIMEOUT: 'SILENCE_TIMEOUT',
+  SKIP_QUESTION: 'SKIP_QUESTION',
+  CANDIDATE_INTERRUPTED: 'CANDIDATE_INTERRUPTED',
   TRIGGER_FOLLOW_UP: 'TRIGGER_FOLLOW_UP',
   FOLLOW_UP_SPOKEN: 'FOLLOW_UP_SPOKEN',
   NEXT_QUESTION: 'NEXT_QUESTION',
@@ -62,6 +64,8 @@ const TRANSITION_TABLE = {
   },
   [InterviewState.SPEAKING_QUESTION]: {
     [InterviewEvent.QUESTION_SPOKEN]: InterviewState.LISTENING,
+    [InterviewEvent.CANDIDATE_INTERRUPTED]: InterviewState.LISTENING,
+    [InterviewEvent.SKIP_QUESTION]: InterviewState.PROCESSING_RESPONSE,
     [InterviewEvent.PAUSE]: InterviewState.PAUSED,
     [InterviewEvent.ABORT]: InterviewState.ABORTED,
     [InterviewEvent.CHECK_FAILED]: InterviewState.ERROR,
@@ -71,6 +75,7 @@ const TRANSITION_TABLE = {
     [InterviewEvent.REQUEST_REPEAT]: InterviewState.SPEAKING_QUESTION,
     [InterviewEvent.REQUEST_CLARIFY]: InterviewState.SPEAKING_QUESTION,
     [InterviewEvent.SILENCE_TIMEOUT]: InterviewState.PROCESSING_RESPONSE,
+    [InterviewEvent.SKIP_QUESTION]: InterviewState.PROCESSING_RESPONSE,
     [InterviewEvent.PAUSE]: InterviewState.PAUSED,
     [InterviewEvent.ABORT]: InterviewState.ABORTED,
     [InterviewEvent.CHECK_FAILED]: InterviewState.ERROR,
@@ -85,6 +90,8 @@ const TRANSITION_TABLE = {
   },
   [InterviewState.FOLLOW_UP]: {
     [InterviewEvent.FOLLOW_UP_SPOKEN]: InterviewState.LISTENING,
+    [InterviewEvent.CANDIDATE_INTERRUPTED]: InterviewState.LISTENING,
+    [InterviewEvent.SKIP_QUESTION]: InterviewState.PROCESSING_RESPONSE,
     [InterviewEvent.PAUSE]: InterviewState.PAUSED,
     [InterviewEvent.ABORT]: InterviewState.ABORTED,
     [InterviewEvent.CHECK_FAILED]: InterviewState.ERROR,
@@ -108,7 +115,10 @@ export class InterviewStateMachine {
     this.context = {
       errorMessage: null,
       repeatCount: 0,
+      skipCount: 0,
+      interruptionCount: 0,
       pauseTimestamp: null,
+      lastAction: null,
       ...options.initialContext,
     };
     this.listeners = new Set();
@@ -185,14 +195,25 @@ export class InterviewStateMachine {
     // Update context based on transition
     if (event === InterviewEvent.CHECK_FAILED) {
       this.context.errorMessage = payload.error || 'System or audio check failed';
+      this.context.lastAction = 'error';
     } else if (event === InterviewEvent.REQUEST_REPEAT) {
       this.context.repeatCount += 1;
+      this.context.lastAction = 'repeat';
+    } else if (event === InterviewEvent.SKIP_QUESTION) {
+      this.context.skipCount += 1;
+      this.context.lastAction = 'skip';
+    } else if (event === InterviewEvent.CANDIDATE_INTERRUPTED) {
+      this.context.interruptionCount += 1;
+      this.context.lastAction = 'interrupted';
     } else if (event === InterviewEvent.PAUSE) {
       this.context.pauseTimestamp = Date.now();
+      this.context.lastAction = 'pause';
     } else if (event === InterviewEvent.RESUME) {
       this.context.pauseTimestamp = null;
+      this.context.lastAction = 'resume';
     } else if (event === InterviewEvent.RECOVER) {
       this.context.errorMessage = null;
+      this.context.lastAction = 'recover';
     }
 
     // Notify listeners

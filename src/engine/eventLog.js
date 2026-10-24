@@ -18,6 +18,8 @@ export const EventType = Object.freeze({
   REPETITION_REQUESTED: 'REPETITION_REQUESTED',
   CLARIFICATION_REQUESTED: 'CLARIFICATION_REQUESTED',
   SILENCE_DETECTED: 'SILENCE_DETECTED',
+  QUESTION_SKIPPED: 'QUESTION_SKIPPED',
+  CANDIDATE_INTERRUPTED: 'CANDIDATE_INTERRUPTED',
   INTERVIEW_PAUSED: 'INTERVIEW_PAUSED',
   INTERVIEW_RESUMED: 'INTERVIEW_RESUMED',
   INTERVIEW_COMPLETED: 'INTERVIEW_COMPLETED',
@@ -74,6 +76,38 @@ export class InterviewEventLog {
       questionId,
       text,
       isFollowUp,
+    });
+
+    return turn;
+  }
+
+  /**
+   * Record that a question was explicitly skipped.
+   * A skipped question is recorded with `skipped: true` and empty `recognizedText`.
+   * It is never recorded as an answered question turn.
+   *
+   * @param {object} skipData
+   * @param {string} skipData.questionId
+   * @param {boolean} [skipData.isFollowUp=false]
+   * @param {string} [skipData.reason='candidate_requested']
+   * @returns {object} The transcript turn
+   */
+  logSkip({ questionId, isFollowUp = false, reason = 'candidate_requested' }) {
+    const turn = {
+      id: generateId(),
+      role: 'candidate',
+      questionId,
+      skipped: true,
+      recognizedText: '', // Not an answer
+      reason,
+      timestamp: new Date().toISOString(),
+    };
+
+    this.transcript.push(turn);
+    this.logEvent(EventType.QUESTION_SKIPPED, {
+      questionId,
+      isFollowUp,
+      reason,
     });
 
     return turn;

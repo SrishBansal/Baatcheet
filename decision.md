@@ -247,6 +247,62 @@
 - **Requirements affected:** Non-negotiable rules 4, 5, 14, 15.
 - **Revisit condition:** Any new dependency triggers this process.
 
+### ADR-020: Interview engine — explicit transition table and separated raw transcripts
+
+- **Status:** Accepted
+- **Date:** 2026-10-24
+- **Context:** Phase 2 implements the interview engine. The specification demands explicit states, invalid transition guards, repetition/clarification handling, follow-up bounds, and strict separation between raw recognised transcript and AI interpretation.
+- **Decision:** Implemented `InterviewStateMachine` as an immutable transition table mapping states to allowed events. Guarded transitions prevent jumping states or continuing past completion. `QuestionManager` enforces `maxFollowUps` and deterministic sequence ordering. `InterviewEventLog` strictly stores raw recognised speech in `recognizedText` and never allows AI summaries or interpretations to overwrite or mask the candidate's actual words.
+- **Alternatives considered:** Event-emitter driven free flows, or allowing the LLM to decide when an interview is over.
+- **Rationale:** Prevents hallucinated conversation state, ensures predictable auditability, and guarantees recruiter review fidelity.
+- **Trade-offs and risks:** Requires explicit code paths for every possible user action (pause, skip, repeat). Mitigated by comprehensive unit test suites covering every transition.
+- **Requirements affected:** B.1–B.5, D.1–D.3.
+- **Revisit condition:** When voice streaming or websocket transport is introduced in future iterations.
+
+### ADR-021: Dashboard job positions layout — card-based presentation over data table
+
+- **Status:** Accepted
+- **Date:** 2026-10-24
+- **Context:** The Phase 0 plan listed `src/components/ui/Table.jsx`, but the recruiter dashboard was implemented using interactive, accessible `JobCard` components displaying status badges, descriptions, and counter summaries.
+- **Decision:** Retain the card-based layout for the recruiter dashboard's job position overview and deviate from the initial file checklist by deferring `Table.jsx` until Requirement A.4 (Interview List). Do not build an unused `Table.jsx` component simply to satisfy a checklist.
+- **Alternatives considered:**
+  - **Replace cards with Table:** Degrades readability on mobile/tablet viewports and restricts display of multiline descriptions and multiple count badges.
+  - **Build an unused Table component:** Violates scope discipline and introduces dead, untested code into the bundle.
+- **Rationale:** Job position items have variable-length descriptions and several metadata badges that naturally suit a card layout. Data tables are better suited for homogeneous, tabular candidate interview rows (Requirement A.4).
+- **Trade-offs and risks:** Column sorting by arbitrary attribute is not available directly on the overview; compensated by clear status filtering and timestamps.
+- **Requirements affected:** A.1, UI direction.
+- **Revisit condition:** Revisit when implementing Requirement A.4 (Interview List) or if recruiter position volume exceeds 50+ items requiring dense tabular pagination.
+
+### ADR-022: Storage initialization and race-condition elimination
+
+- **Status:** Accepted
+- **Date:** 2026-10-24
+- **Context:** An audit identified that calling `seedIfEmpty()` inside `App.jsx` `useEffect` triggered after child `Dashboard.jsx`'s `useEffect`, resulting in a blank initial render on a user's first visit.
+- **Decision:** Execute `seedIfEmpty()` synchronously in `src/main.jsx` before `ReactDOM.createRoot().render()`. Added `typeof localStorage === 'undefined'` environment guards across `store.js` and `synthetic.js`. In `synthetic.js`, if existing jobs are detected, set the `hirepilot:seeded` marker immediately to guarantee that custom user positions are never overwritten and deleted jobs are not resurrected.
+- **Alternatives considered:**
+  - **Asynchronous polling/setTimeout in Dashboard:** Fragile, conceals the race condition, and adds artificial render delay.
+  - **Full state management library (Zustand/Redux):** Violates ADR-005 and ADR-016.
+- **Rationale:** Synchronous storage check prior to React component tree mounting guarantees that the store has seed records available on the very first mount without render flashing or race conditions.
+- **Trade-offs and risks:** Adds a negligible synchronous storage check during application boot.
+- **Requirements affected:** A.1, Engineering principle (reliable data layer).
+- **Revisit condition:** When remote API backend persistence is introduced in Phase 4.
+
+### ADR-023: Explicit question skipping and interruption handling in interview engine
+
+- **Status:** Accepted
+- **Date:** 2026-10-24
+- **Context:** The interview engine required explicit mechanisms to skip questions (Requirement B.4) and handle candidate speech occurring while the interviewer is speaking without corrupting state or prematurely advancing questions.
+- **Decision:**
+  - **Skipping:** Added `InterviewEvent.SKIP_QUESTION`, permitted exclusively from `SPEAKING_QUESTION`, `LISTENING`, and `FOLLOW_UP`, transitioning to `PROCESSING_RESPONSE`. `QuestionManager.skipQuestion()` registers the skip and guarantees `canFollowUp()` returns `false`. `InterviewEventLog.logSkip()` records the event with `skipped: true` and empty `recognizedText` so downstream evaluation cannot mistake it for an answered question.
+  - **Interruption:** Added `InterviewEvent.CANDIDATE_INTERRUPTED`, permitted from `SPEAKING_QUESTION` and `FOLLOW_UP`, transitioning to `LISTENING`. Increments `context.interruptionCount`, tracks `lastAction: 'interrupted'`, and leaves the active question intact. The candidate can then answer (`RESPONSE_RECEIVED`), ask to re-hear the question (`REQUEST_REPEAT` -> `SPEAKING_QUESTION`), or skip (`SKIP_QUESTION`).
+- **Alternatives considered:**
+  - **Dedicated INTERRUPTED state:** Unnecessary complexity; `LISTENING` already possesses the complete transition vocabulary required for candidate speech, repeat requests, pauses, and timeouts.
+  - **Free-form LLM control:** Prohibited by specification and ADR-007.
+- **Rationale:** Keeps the engine purely deterministic, preserves question ordering and follow-up limits, and keeps the engine completely independent of browser Web Speech APIs.
+- **Trade-offs and risks:** The future voice adapter must coordinate cancelling ongoing speech synthesis upon candidate speech detection.
+- **Requirements affected:** B.1–B.5, D.1–D.3.
+- **Revisit condition:** If real-time bidirectional audio streaming requires fine-grained millisecond barge-in telemetry.
+
 ---
 
 ## Provisional Decisions
@@ -289,20 +345,6 @@
 - **Trade-offs and risks:** Text input loses speech analytics data. Metrics are marked as unavailable.
 - **Requirements affected:** C.4 (graceful handling), F.2 (unavailable measurement marking).
 - **Revisit condition:** When voice integration is implemented (Phase 2). If a free speech API becomes available, reconsider.
-
----
-
-### ADR-020: Interview engine — explicit transition table and separated raw transcripts
-
-- **Status:** Accepted
-- **Date:** 2026-10-24
-- **Context:** Phase 2 implements the interview engine. The specification demands explicit states, invalid transition guards, repetition/clarification handling, follow-up bounds, and strict separation between raw recognised transcript and AI interpretation.
-- **Decision:** Implemented `InterviewStateMachine` as an immutable transition table mapping states to allowed events. Guarded transitions prevent jumping states or continuing past completion. `QuestionManager` enforces `maxFollowUps` and deterministic sequence ordering. `InterviewEventLog` strictly stores raw recognised speech in `recognizedText` and never allows AI summaries or interpretations to overwrite or mask the candidate's actual words.
-- **Alternatives considered:** Event-emitter driven free flows, or allowing the LLM to decide when an interview is over.
-- **Rationale:** Prevents hallucinated conversation state, ensures predictable auditability, and guarantees recruiter review fidelity.
-- **Trade-offs and risks:** Requires explicit code paths for every possible user action (pause, skip, repeat). Mitigated by comprehensive unit test suites covering every transition.
-- **Requirements affected:** B.1–B.5, D.1–D.3.
-- **Revisit condition:** When voice streaming or websocket transport is introduced in future iterations.
 
 ---
 

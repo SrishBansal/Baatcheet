@@ -14,6 +14,7 @@ export class QuestionManager {
     this.questions = [...questions].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     this.currentIndex = 0;
     this.followUpCounts = new Map(); // questionId -> number of follow-ups asked
+    this.skippedQuestionIds = new Set(); // IDs of questions explicitly skipped
     this.activeFollowUp = null; // currently active follow-up question object if any
   }
 
@@ -79,14 +80,38 @@ export class QuestionManager {
 
   /**
    * Determine if an additional follow-up question is permitted by the job configuration.
+   * Skipped questions NEVER allow follow-up questions.
    * @returns {boolean}
    */
   canFollowUp() {
     const current = this.getCurrentQuestion();
     if (!current) return false;
+    if (this.isQuestionSkipped(current.id)) return false;
     const max = current.maxFollowUps ?? 1;
     const count = this.getCurrentFollowUpCount();
     return count < max;
+  }
+
+  /**
+   * Explicitly mark the current active question as skipped.
+   * Clears any active follow-up questions.
+   * @returns {import('../data/models.js').InterviewQuestion | null}
+   */
+  skipQuestion() {
+    const current = this.getCurrentQuestion();
+    if (!current) return null;
+    this.skippedQuestionIds.add(current.id);
+    this.activeFollowUp = null;
+    return current;
+  }
+
+  /**
+   * Check if a specific question was marked as skipped.
+   * @param {string} questionId
+   * @returns {boolean}
+   */
+  isQuestionSkipped(questionId) {
+    return this.skippedQuestionIds.has(questionId);
   }
 
   /**

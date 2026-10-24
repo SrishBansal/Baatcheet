@@ -66,4 +66,37 @@ describe('InterviewEventLog', () => {
       logger.logAnswer({ questionId: 'q-1' });
     }).toThrow(/Answer must include raw recognizedText string/);
   });
+
+  it('records skipped questions with skipped:true and empty recognizedText', () => {
+    const logger = new InterviewEventLog('test-interview-123');
+
+    const turn = logger.logSkip({
+      questionId: 'q-202',
+      isFollowUp: false,
+      reason: 'candidate_skipped',
+    });
+
+    expect(turn.role).toBe('candidate');
+    expect(turn.questionId).toBe('q-202');
+    expect(turn.skipped).toBe(true);
+    expect(turn.recognizedText).toBe(''); // Must NOT be an answered turn
+
+    const events = logger.getEvents();
+    const skipEvent = events.find((e) => e.type === EventType.QUESTION_SKIPPED);
+    expect(skipEvent).toBeDefined();
+    expect(skipEvent.metadata.questionId).toBe('q-202');
+  });
+
+  it('records interruption events cleanly in timeline', () => {
+    const logger = new InterviewEventLog('test-interview-123');
+    logger.logEvent(EventType.CANDIDATE_INTERRUPTED, {
+      questionId: 'q-303',
+      interruptedAtState: 'SPEAKING_QUESTION',
+    });
+
+    const events = logger.getEvents();
+    expect(events.length).toBe(1);
+    expect(events[0].type).toBe(EventType.CANDIDATE_INTERRUPTED);
+    expect(events[0].metadata.questionId).toBe('q-303');
+  });
 });
