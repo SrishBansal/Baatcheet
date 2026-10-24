@@ -87,7 +87,8 @@ export default function Dashboard() {
               <JobCard
                 key={job.id}
                 job={job}
-                onClick={() => navigate(`/jobs/${job.id}/edit`)}
+                onEdit={() => navigate(`/jobs/${job.id}/edit`)}
+                onLaunchInterview={() => navigate(`/interview/${job.id}`)}
               />
             ))}
           </div>
@@ -100,19 +101,30 @@ export default function Dashboard() {
 /**
  * Individual job card component.
  */
-function JobCard({ job, onClick }) {
+function JobCard({ job, onEdit, onLaunchInterview }) {
   const skillCount = job.skills?.length || 0;
   const questionCount = job.questions?.length || 0;
   const criteriaCount = job.criteria?.length || 0;
 
   return (
-    <button
+    <div
       className="job-card"
-      onClick={onClick}
-      type="button"
-      aria-label={`Edit ${job.title}`}
+      role="article"
+      aria-label={`Position: ${job.title}`}
     >
-      <div className="job-card__main">
+      <div
+        className="job-card__main"
+        onClick={onEdit}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onEdit();
+          }
+        }}
+        style={{ cursor: 'pointer' }}
+      >
         <div className="job-card__header">
           <h3 className="job-card__title">{job.title}</h3>
           <Badge variant={job.status} size="sm">
@@ -132,8 +144,29 @@ function JobCard({ job, onClick }) {
           <span className="job-card__meta-item">{formatRelativeTime(job.updatedAt)}</span>
         </div>
       </div>
-      <ChevronRightIcon className="job-card__chevron" />
-    </button>
+
+      <div className="job-card__actions" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '16px', flexShrink: 0 }}>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            onLaunchInterview();
+          }}
+          aria-label={`Launch interview for ${job.title}`}
+        >
+          Launch Interview
+        </Button>
+        <button
+          type="button"
+          onClick={onEdit}
+          aria-label={`Edit ${job.title}`}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px' }}
+        >
+          <ChevronRightIcon className="job-card__chevron" style={{ margin: 0 }} />
+        </button>
+      </div>
+    </div>
   );
 }
 

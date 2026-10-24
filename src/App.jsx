@@ -3,11 +3,16 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import AppShell from './components/layout/AppShell.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import JobConfig from './pages/JobConfig.jsx';
+import InterviewSession from './pages/InterviewSession.jsx';
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Candidate-facing focused interview session */}
+        <Route path="/interview/:jobId" element={<InterviewSession />} />
+
+        {/* Recruiter portal */}
         <Route path="/" element={<AppShell />}>
           <Route index element={<Dashboard />} />
           <Route path="jobs" element={<Dashboard />} />

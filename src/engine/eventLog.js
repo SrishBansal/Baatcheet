@@ -11,6 +11,7 @@
 import { generateId } from '../utils/id.js';
 
 export const EventType = Object.freeze({
+  CANDIDATE_CONSENT_GRANTED: 'CANDIDATE_CONSENT_GRANTED',
   SESSION_STARTED: 'SESSION_STARTED',
   QUESTION_ASKED: 'QUESTION_ASKED',
   FOLLOW_UP_ASKED: 'FOLLOW_UP_ASKED',

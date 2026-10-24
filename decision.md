@@ -323,6 +323,27 @@
 - **Requirements affected:** C.1–C.5, F.2, Engineering principles (replaceable providers, module separation).
 - **Revisit condition:** When adding server-side speech recognition or WebSocket streaming in multi-user production phases.
 
+### ADR-025: Live interview session controller and UI architecture
+
+- **Status:** Accepted
+- **Date:** 2026-10-24
+- **Context:** Phase 2B connects the deterministic interview state machine, question manager, event log, voice adapters, and manual text input fallback into a browser-based candidate interview experience.
+- **Decision:**
+  - **Single Orchestration Controller:** Implemented `InterviewController` (`src/engine/interviewController.js`) as the coordinating authority. The controller coordinates `InterviewStateMachine`, `QuestionManager`, `InterviewEventLog`, `BrowserSpeechRecognizer`, and `BrowserSpeechSynthesizer`.
+  - **Explicit Consent Gating:** Candidate must review instructions and grant explicit consent (`grantConsent()`) before audio capture or synthesis is initiated. The action is audited in `InterviewEventLog` as `CANDIDATE_CONSENT_GRANTED`.
+  - **Deterministic State Progression:** Question presentation, listening, answering, repetition, clarification, and completion follow strictly guarded state machine transitions. Concurrency guards (`isSubmitting` and `isAdvancing`) eliminate race conditions, duplicate submissions, and double question advancement.
+  - **Seamless Manual Text Fallback:** When speech recognition is unsupported or microphone access is denied by the user, `setInputMode('text')` activates a manual text interface. Answers are submitted directly without fabricating audio metrics or raw speech transcripts.
+  - **Interruption and Question Preservation:** Detecting candidate speech during question playback (`_handleCandidateSpeechStart` / `interruptQuestion`) halts synthesis and transitions to `LISTENING` while preserving the active question prompt.
+  - **Lifecycle Cleanup:** On component unmount or session termination, `destroy()` halts active recognition, cancels speech synthesis, and unregisters all event subscriptions to prevent memory leaks and stale callbacks.
+  - **Candidate Session UI:** Implemented `src/pages/InterviewSession.jsx` and `InterviewSession.css` featuring consent acknowledgment, live question presentation, listening/speaking state indicators, transcript review drawer, confirmation before early exit, and polite completion and aborted screens.
+- **Alternatives considered:**
+  - Embedding session orchestration directly in React state inside `InterviewSession.jsx`: Rejected because domain logic would become coupled to React rendering lifecycles, preventing clean headless unit testing.
+  - Auto-submitting on brief pauses: Rejected because candidate hesitation could lead to premature submission; candidate retains explicit submission control.
+- **Rationale:** Ensures clean decoupling between presentation and interview logic, prevents stale callbacks from corrupting state, respects candidate consent and privacy, and provides a robust fallback across all browsers.
+- **Trade-offs and risks:** Session state is held in client memory during the interview; a browser reload restarts the interview from the introduction screen. Session persistence and crash recovery are deferred to U-005.
+- **Requirements affected:** B.1–B.5, C.1–C.5, D.1–D.3.
+- **Revisit condition:** When implementing server-side session persistence and cross-device interview links in Phase 4.
+
 ---
 
 ## Provisional Decisions
