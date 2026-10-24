@@ -303,6 +303,26 @@
 - **Requirements affected:** B.1–B.5, D.1–D.3.
 - **Revisit condition:** If real-time bidirectional audio streaming requires fine-grained millisecond barge-in telemetry.
 
+### ADR-024: Browser voice abstraction layer contracts and runtime boundary
+
+- **Status:** Accepted
+- **Date:** 2026-10-24
+- **Context:** Phase 2A implements the browser voice abstraction layer. Requirements C.1–C.5 demand runtime feature detection, truthful capability reporting, clean separation from the interview engine, and prevention of duplicate transcription accumulation or infinite restart loops.
+- **Decision:**
+  - **Module Separation:** Implemented three distinct modules under `src/voice/`:
+    1. `capabilities.js`: `detectCapabilities(windowObj)` returns a normalized capability object (`hasSpeechRecognition`, `hasSpeechSynthesis`, `supportsFullVoice`, `supportsTextInputFallback`, `mode`, `summary`, `details`). Operates purely via feature detection rather than user-agent sniffing.
+    2. `speechRecognition.js`: `BrowserSpeechRecognizer` wraps `SpeechRecognition` / `webkitSpeechRecognition`. Features dependency-injected constructor, monotonic index tracking to prevent duplicate final transcripts, error mapping (`isPermissionDenied`, `isNoSpeech`, `isAudioCaptureError`), and `onSpeechStart` hook for barge-in detection. Never silently falls back and never loops restarts.
+    3. `speechSynthesis.js`: `BrowserSpeechSynthesizer` wraps `window.speechSynthesis`. Features `speak(text, options)`, `stop()`, clean event handler detachment, and automatic pre-cancellation of in-flight utterances.
+  - **Engine Boundary:** The voice layer is an I/O adapter. It does not import, touch, or decide interview states or question order. The future interview controller will translate voice callbacks into `InterviewStateMachine` events (`QUESTION_SPOKEN`, `CANDIDATE_INTERRUPTED`, `RESPONSE_RECEIVED`, `SILENCE_TIMEOUT`).
+  - **Browser Limitations:** Safari (macOS/iOS) lacks recognition APIs but supports synthesis (`synthesis_only` mode); text-input fallback is mandatory for Safari. Chromium browsers support both APIs but require user gesture activation and permission prompts.
+- **Alternatives considered:**
+  - **Coupling voice events directly to state machine inside voice adapter:** Rejected because it destroys module independence and makes headless unit testing impossible.
+  - **Third-party speech API (Deepgram/Whisper):** Prohibited by zero-budget constraint (ADR-015).
+- **Rationale:** Strict adapter interfaces allow mocking browser hardware in unit tests, report browser capabilities honestly without spoofing, and isolate audio quirks from recruitment business logic.
+- **Trade-offs and risks:** In `synthesis_only` or `text_fallback_only` modes, speaking pace and audio metrics cannot be captured; they must be marked as unavailable per ADR-011.
+- **Requirements affected:** C.1–C.5, F.2, Engineering principles (replaceable providers, module separation).
+- **Revisit condition:** When adding server-side speech recognition or WebSocket streaming in multi-user production phases.
+
 ---
 
 ## Provisional Decisions
