@@ -76,11 +76,18 @@ export class InterviewController {
     this.allowTyping = this.job.settings?.allowTyping === true;
     this.inputMode = !this.capabilities.hasSpeechRecognition && this.allowTyping ? 'text' : 'voice';
     this._checksUsed = 0;
+    this._checksTurnToken = 0;
     this._postCheckTimer = null;
+    this._speechSafetyTimer = null;
+    this._recognitionRestartTimer = null;
+    this._recognitionRestartAttempts = 0;
+    this.microphoneStalled = false;
     this._awaitingDoneCheck = false;
     this.isSubmitting = false;
     this.isAdvancing = false;
     this.isDestroyed = false;
+    this._setTimeout = options.setTimeout || globalThis.setTimeout.bind(globalThis);
+    this._clearTimeout = options.clearTimeout || globalThis.clearTimeout.bind(globalThis);
 
     // Voice-turn endpointer (Checkpoint 2)
     this._endpointer = new VoiceTurnEndpointer({
@@ -534,7 +541,6 @@ export class InterviewController {
     this.questionStartTime = Date.now();
     this.interimText = '';
     this.currentAnswerDraft = '';
-    this._checksUsed = 0;
     this._awaitingDoneCheck = false;
     this._clearPostCheckTimer();
     this.isSubmitting = false;
@@ -552,7 +558,7 @@ export class InterviewController {
     };
 
     if (this.synthesizer.isSupported()) {
-      this.synthesizer.speak(result.say, {
+      this._speakWithSafety(result.say, {
         onStart: () => {},
         onEnd: onFinished,
         onError: (err) => {
@@ -602,16 +608,14 @@ export class InterviewController {
 
       // Begin listening if in voice mode and recognition is available
       if (this.inputMode === 'voice' && this.recognizer.isSupported()) {
-        this._endpointer.startTurn();
-        this.recognizer.start();
+        this._beginListeningTurn(true);
       }
     } else if (this.stateMachine.getState() === InterviewState.FOLLOW_UP) {
       this.stateMachine.transition(InterviewEvent.FOLLOW_UP_SPOKEN);
       this.questionEndTime = Date.now();
 
       if (this.inputMode === 'voice' && this.recognizer.isSupported()) {
-        this._endpointer.startTurn();
-        this.recognizer.start();
+        this._beginListeningTurn(true);
       }
     }
   }
@@ -637,8 +641,7 @@ export class InterviewController {
 
       // Begin listening immediately upon candidate barge-in if in voice mode
       if (this.inputMode === 'voice' && this.recognizer.isSupported()) {
-        this._endpointer.startTurn();
-        this.recognizer.start();
+        this._beginListeningTurn(true);
       }
     }
   }
@@ -722,8 +725,7 @@ export class InterviewController {
     this._clearPostCheckTimer();
     this._endpointer.cancelTurn();
     if (this.stateMachine.getState() === InterviewState.LISTENING && this.recognizer.isSupported()) {
-      this._endpointer.startTurn();
-      this.recognizer.start();
+      this._beginListeningTurn(false);
     }
   }
 
@@ -956,6 +958,7 @@ export class InterviewController {
      ---------------------------------------------------------------- */
 
   _handleCandidateSpeechStart() {
+    if (this._awaitingDoneCheck) this._cancelDoneCheck();
     // Interruption detected while interviewer is speaking
     if (this.stateMachine.getState() === InterviewState.SPEAKING_QUESTION) {
       this.interruptQuestion();
@@ -972,10 +975,7 @@ export class InterviewController {
       this.submitAnswer(this.currentAnswerDraft);
       return;
     }
-    if (this._awaitingDoneCheck) {
-      this._clearPostCheckTimer();
-      this._awaitingDoneCheck = false;
-    }
+    if (this._awaitingDoneCheck) this._cancelDoneCheck();
     this.interimText = interimText;
     this.currentAnswerDraft = text;
 
@@ -1000,6 +1000,9 @@ export class InterviewController {
 
   _handleRecognitionStart() {
     this.speechErrorMessage = null;
+    this.microphoneStalled = false;
+    this._recognitionRestartAttempts = 0;
+    this._clearRecognitionRestartTimer();
   }
 
   _handleRecognitionEnd() {
@@ -1007,6 +1010,9 @@ export class InterviewController {
     // Notify endpointer: recognition ended; may auto-fire silence timeout if
     // sufficient draft text exists.
     this._endpointer.onRecognitionEnd(this.currentAnswerDraft);
+    if (this.stateMachine.getState() === InterviewState.LISTENING && !this._awaitingDoneCheck && !this.isSubmitting && this.inputMode === 'voice') {
+      this._scheduleRecognitionRestart();
+    }
   }
 
   /**
@@ -1020,16 +1026,17 @@ export class InterviewController {
     if (this.isSubmitting) return;
 
     const draft = (this.currentAnswerDraft || '').trim();
-    if (draft && this.inputMode === 'voice' && shouldPerformDoneCheck(draft, this._checksUsed)) {
+    if (draft && this.inputMode === 'voice' && this._checksTurnToken === this._endpointer._currentToken && shouldPerformDoneCheck(draft, this._checksUsed)) {
       this._checksUsed += 1;
       this._awaitingDoneCheck = true;
+      this._endpointer.setSynthPlaying();
       if (this.recognizer.isListening) this.recognizer.stop();
-      this.synthesizer.speak('Is that everything, or would you like to add more?', {
+      this._speakWithSafety('Is that everything, or would you like to add more?', {
         onEnd: () => {
           if (this.isDestroyed || !this._awaitingDoneCheck) return;
-          this._endpointer.startTurn();
-          this.recognizer.start();
-          this._postCheckTimer = setTimeout(() => {
+          this._endpointer.setSynthFinished();
+          this._beginListeningTurn(false);
+          this._postCheckTimer = this._setTimeout(() => {
             this._postCheckTimer = null;
             if (this._awaitingDoneCheck) {
               this._awaitingDoneCheck = false;
@@ -1054,6 +1061,8 @@ export class InterviewController {
 
   _stopAllAudio() {
     this._clearPostCheckTimer();
+    this._clearSpeechSafetyTimer();
+    this._clearRecognitionRestartTimer();
     if (this.synthesizer && typeof this.synthesizer.stop === 'function') {
       this.synthesizer.stop();
     }
@@ -1086,8 +1095,87 @@ export class InterviewController {
 
   _clearPostCheckTimer() {
     if (this._postCheckTimer !== null) {
-      clearTimeout(this._postCheckTimer);
+      this._clearTimeout(this._postCheckTimer);
       this._postCheckTimer = null;
     }
+  }
+
+  _beginListeningTurn(newTurn) {
+    const token = newTurn ? this._endpointer.startTurn() : this._endpointer.resumeTurn();
+    if (newTurn) {
+      this._checksTurnToken = token;
+      this._checksUsed = 0;
+    }
+    this._recognitionRestartAttempts = 0;
+    this.recognizer.start();
+  }
+
+  _speakWithSafety(text, callbacks = {}) {
+    let settled = false;
+    const finish = (kind, value) => {
+      if (settled) return;
+      settled = true;
+      this._clearSpeechSafetyTimer();
+      if (kind === 'error') callbacks.onError?.(value);
+      else callbacks.onEnd?.();
+    };
+    this._clearSpeechSafetyTimer();
+    this._speechSafetyTimer = this._setTimeout(() => finish('end'), 10000);
+    const started = this.synthesizer.speak(text, { onStart: callbacks.onStart, onEnd: () => finish('end'), onError: (err) => finish('error', err) });
+    if (started === false) finish('end');
+  }
+
+  _clearSpeechSafetyTimer() {
+    if (this._speechSafetyTimer !== null) {
+      this._clearTimeout(this._speechSafetyTimer);
+      this._speechSafetyTimer = null;
+    }
+  }
+
+  _cancelDoneCheck() {
+    if (!this._awaitingDoneCheck) return;
+    this._awaitingDoneCheck = false;
+    this._clearPostCheckTimer();
+    this._clearSpeechSafetyTimer();
+    this.synthesizer.stop();
+    this._endpointer.setSynthFinished();
+    this._beginListeningTurn(false);
+  }
+
+  _scheduleRecognitionRestart() {
+    this._clearRecognitionRestartTimer();
+    this._recognitionRestartTimer = this._setTimeout(() => {
+      this._recognitionRestartTimer = null;
+      if (this.isDestroyed || this.stateMachine.getState() !== InterviewState.LISTENING || this.recognizer.isListening) return;
+      if (this._recognitionRestartAttempts++ === 0) {
+        this.recognizer.start();
+        this._scheduleRecognitionRestart();
+      } else {
+        this.microphoneStalled = true;
+        if (this.onStateChange) this.onStateChange(this.stateMachine.getState(), this.stateMachine.getState(), {});
+      }
+    }, 5000);
+  }
+
+  _clearRecognitionRestartTimer() {
+    if (this._recognitionRestartTimer !== null) {
+      this._clearTimeout(this._recognitionRestartTimer);
+      this._recognitionRestartTimer = null;
+    }
+  }
+
+  restartMicrophone() {
+    this.microphoneStalled = false;
+    this._recognitionRestartAttempts = 0;
+    if (this.stateMachine.getState() === InterviewState.LISTENING) this._beginListeningTurn(false);
+  }
+
+  resetStep() {
+    this._awaitingDoneCheck = false;
+    this._stopAllAudio();
+    this.isSubmitting = false;
+    this.microphoneStalled = false;
+    if (this.stateMachine.getState() === InterviewState.LISTENING) this._beginListeningTurn(false);
+    else if (this.engineError && this.onStateChange) this.onStateChange(this.stateMachine.getState(), this.stateMachine.getState(), {});
   }
 }

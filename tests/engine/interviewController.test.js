@@ -137,6 +137,38 @@ describe('InterviewController', () => {
     expect(consentEvent.metadata.jobId).toBe(sampleJob.id);
   });
 
+  it('scopes done checks to one literal listening-turn token', () => {
+    const controller = new InterviewController({ job: sampleJob, speechRecognizer: mockRecognizer, speechSynthesizer: mockSynthesizer, capabilities });
+    controller.grantConsent();
+    controller.startInterview();
+    mockSynthesizer._lastCallbacks.onEnd();
+    controller._checksUsed = 1;
+    const token = controller._checksTurnToken;
+    controller._handleRecognitionResult({ text: 'an unrelated re-render result', isFinal: false, interimText: '', finalText: '' });
+    expect(controller._checksUsed).toBe(1);
+    expect(controller._checksTurnToken).toBe(token);
+    controller._beginListeningTurn(true);
+    expect(controller._checksUsed).toBe(0);
+    expect(controller._checksTurnToken).not.toBe(token);
+  });
+
+  it('keeps only one answer-completion timer and cancels a spoken check on new speech', () => {
+    vi.useFakeTimers();
+    const controller = new InterviewController({ job: sampleJob, speechRecognizer: mockRecognizer, speechSynthesizer: mockSynthesizer, capabilities });
+    controller.grantConsent();
+    controller.startInterview();
+    mockSynthesizer._lastCallbacks.onEnd();
+    controller.currentAnswerDraft = 'Short answer.';
+    controller._handleSilenceTimeout();
+    expect(controller._awaitingDoneCheck).toBe(true);
+    expect(vi.getTimerCount()).toBe(1); // speech watchdog; no second silence/check timer is armed
+    controller._handleRecognitionResult({ text: 'Short answer with more detail.', isFinal: false, interimText: 'more detail', finalText: '' });
+    expect(mockSynthesizer.stop).toHaveBeenCalled();
+    expect(controller._awaitingDoneCheck).toBe(false);
+    expect(mockRecognizer.start).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
   it('progresses through ordered questions to completion', () => {
     const controller = new InterviewController({
       job: sampleJob,

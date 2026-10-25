@@ -134,6 +134,15 @@ export class VoiceTurnEndpointer {
     return this._currentToken;
   }
 
+  /** Resume listening for the current question without issuing a new turn token. */
+  resumeTurn() {
+    if (this._isDestroyed) return this._currentToken;
+    this._cancelTimer();
+    this._micActive = true;
+    this._synthActive = false;
+    return this._currentToken;
+  }
+
   cancelTurn() {
     this._cancelTimer();
     this._cancelNoSpeechTimer();

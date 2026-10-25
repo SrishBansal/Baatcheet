@@ -85,6 +85,18 @@ export function useInterviewSession(job, options = {}) {
       forceUpdate();
     }, [forceUpdate]),
 
+    restartMicrophone: useCallback(() => {
+      controllerRef.current?.restartMicrophone();
+      forceUpdate();
+    }, [forceUpdate]),
+
+    resetStep: useCallback(() => {
+      controllerRef.current?.resetStep();
+      forceUpdate();
+    }, [forceUpdate]),
+
+    microphoneStalled: controller?.microphoneStalled || false,
+
     submitAnswer: useCallback((text) => {
       const res = controllerRef.current?.submitAnswer(text);
       setInterimSpeech('');
