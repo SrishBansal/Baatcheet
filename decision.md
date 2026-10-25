@@ -472,3 +472,9 @@
 ## Superseded Decisions
 
 _None yet._
+
+## ADR: Baatcheet engine
+- Gemini runs only in the server-side engine.
+- Interviews are voice-only by default with explicit disclosure.
+- Hosted candidate links are not provided yet.
+- Jobs and sessions persist in localStorage.

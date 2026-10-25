@@ -1,6 +1,7 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { HomeIcon, BriefcaseIcon, ClipboardIcon, MenuIcon } from '../ui/Icons.jsx';
+import { health } from '../../data/engineApi.js';
 
 /**
  * Application shell with sidebar navigation, header, and content area.
@@ -36,6 +37,8 @@ const PAGE_TITLES = {
 export default function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
+  const [ai, setAi] = useState(null);
+  useEffect(() => { health().then(setAi).catch(() => setAi({ error: true })); }, []);
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((prev) => !prev);
@@ -60,7 +63,7 @@ export default function AppShell() {
         <div className="app-sidebar__brand">
           <div className="app-sidebar__logo" aria-hidden="true">HP</div>
           <div>
-            <div className="app-sidebar__title">HirePilot</div>
+            <div className="app-sidebar__title">Baatcheet</div>
             <div className="app-sidebar__subtitle">AI Screening</div>
           </div>
         </div>
@@ -105,7 +108,7 @@ export default function AppShell() {
           </button>
           <h1 className="app-header__title">{pageTitle}</h1>
           <div className="app-header__actions">
-            {/* Future: user menu, notifications */}
+            <span className="ai-status-chip">{ai?.error ? 'Server not reachable' : ai?.geminiConfigured ? `AI: Gemini connected (${ai.model || 'Gemini'})` : 'AI: NOT configured. Add GEMINI_API_KEY to .env.local'}</span>
           </div>
         </header>
 
@@ -126,5 +129,5 @@ function getPageTitle(pathname) {
   if (pathname.match(/^\/positions\/[^/]+$/)) return 'Position Details & Criteria';
   if (pathname.match(/^\/jobs\/[^/]+(\/edit)?$/)) return 'Position Details & Criteria';
   if (pathname.match(/^\/interviews\/[^/]+$/)) return 'Interview Report';
-  return 'HirePilot AI';
+  return 'Baatcheet';
 }

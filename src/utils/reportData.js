@@ -155,7 +155,7 @@ export function computeReportData(session) {
   const insufficientEvidenceRequirements = requirementReports.filter((r) => r.status === 'Insufficient evidence');
 
   const limitations = [
-    'HirePilot AI reports are evidence summaries for human recruiter review and never constitute an automated hiring decision.',
+    'Baatcheet reports are evidence summaries for human recruiter review and never constitute an automated hiring decision.',
     'No personality, emotional state, or sentiment is inferred from voice tone or delivery characteristics.',
     'Verbatim evidence quotes are code-validated exact substrings of candidate responses.',
   ];
