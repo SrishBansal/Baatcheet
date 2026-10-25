@@ -169,6 +169,46 @@ describe('InterviewController', () => {
     vi.useRealTimers();
   });
 
+  it('continues to listening when question speech never emits onend', () => {
+    vi.useFakeTimers();
+    const controller = new InterviewController({ job: sampleJob, speechRecognizer: mockRecognizer, speechSynthesizer: mockSynthesizer, capabilities });
+    controller.grantConsent();
+    controller.startInterview();
+    vi.advanceTimersByTime(10000);
+    expect(controller.getState()).toBe(InterviewState.LISTENING);
+    expect(mockRecognizer.start).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('retries a stalled recognizer once, then exposes a recoverable microphone state', () => {
+    vi.useFakeTimers();
+    const controller = new InterviewController({ job: sampleJob, speechRecognizer: mockRecognizer, speechSynthesizer: mockSynthesizer, capabilities });
+    controller.grantConsent();
+    controller.startInterview();
+    mockSynthesizer._lastCallbacks.onEnd();
+    mockRecognizer.isListening = false;
+    controller._handleRecognitionEnd();
+    vi.advanceTimersByTime(5000);
+    expect(mockRecognizer.start).toHaveBeenCalledTimes(2);
+    mockRecognizer.isListening = false;
+    vi.advanceTimersByTime(5000);
+    expect(controller.microphoneStalled).toBe(true);
+    controller.restartMicrophone();
+    expect(controller.microphoneStalled).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it('resetStep preserves the saved turn while returning to listening', () => {
+    const controller = new InterviewController({ job: sampleJob, speechRecognizer: mockRecognizer, speechSynthesizer: mockSynthesizer, capabilities });
+    controller.grantConsent();
+    controller.startInterview();
+    mockSynthesizer._lastCallbacks.onEnd();
+    const turns = controller.getSessionRecord().turns.length;
+    controller.resetStep();
+    expect(controller.getSessionRecord().turns).toHaveLength(turns);
+    expect(controller.getState()).toBe(InterviewState.LISTENING);
+  });
+
   it('progresses through ordered questions to completion', () => {
     const controller = new InterviewController({
       job: sampleJob,

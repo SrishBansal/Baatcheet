@@ -28,6 +28,7 @@ export default function InterviewSession() {
   const [showTranscriptDrawer, setShowTranscriptDrawer] = useState(false);
   const [reloadInterrupted, setReloadInterrupted] = useState(false);
   const [engineHealth, setEngineHealth] = useState(null);
+  const [watchdogVisible, setWatchdogVisible] = useState(false);
 
   useEffect(() => {
     const loadedJob = store.jobs.getById(jobId);
@@ -92,6 +93,16 @@ export default function InterviewSession() {
 
   const session = useInterviewSession(job, { interviewId: interviewIdRef.current });
   const allowTyping = job?.settings?.allowTyping === true;
+
+  useEffect(() => {
+    const waiting = session.state === 'SPEAKING_QUESTION' || session.state === 'FOLLOW_UP' || session.state === 'PROCESSING_RESPONSE';
+    if (!waiting) {
+      setWatchdogVisible(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setWatchdogVisible(true), 20000);
+    return () => clearTimeout(timer);
+  }, [session.state]);
 
   if (!job) {
     return (
@@ -395,6 +406,18 @@ export default function InterviewSession() {
               Retry
             </Button>}>
             {engineErrorMessage(session.engineError)} <small>{session.engineError}</small>
+          </Banner>
+        )}
+
+        {session.microphoneStalled && (
+          <Banner tone="warning" actions={<Button size="sm" variant="secondary" onClick={() => session.restartMicrophone()}>Manual restart</Button>}>
+            Microphone stalled
+          </Banner>
+        )}
+
+        {watchdogVisible && (
+          <Banner tone="warning" actions={<Button size="sm" variant="secondary" onClick={() => { session.resetStep(); setWatchdogVisible(false); }}>Reset this step</Button>}>
+            This is taking longer than expected.
           </Banner>
         )}
 
