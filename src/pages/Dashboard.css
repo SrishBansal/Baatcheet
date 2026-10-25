@@ -18,7 +18,8 @@
 }
 
 .dashboard-title {
-  font-size: 28px;
+  font-size: 32px;
+  letter-spacing: -0.03em;
   font-weight: var(--font-bold);
   color: var(--color-text-primary);
 }
@@ -28,6 +29,8 @@
   color: var(--color-text-secondary);
   margin-top: var(--space-1);
 }
+
+.dashboard-eyebrow { color:var(--accent); font-size:10px; font-weight:700; letter-spacing:.1em; }
 
 .dashboard-header__actions {
   display: flex;
@@ -48,7 +51,9 @@
 }
 
 .dashboard-card {
-  padding: 20px 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -83,23 +88,23 @@
 .attention-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: 0;
 }
 
 .attention-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: var(--space-3);
-  background: var(--color-gray-50);
-  border-radius: var(--radius-md);
-  border-left: 3px solid var(--color-warning-500);
+  padding: 16px 0;
+  background: transparent;
+  border-radius: 0;
+  border-left: 0;
+  border-bottom: 1px solid var(--color-border);
   gap: var(--space-3);
 }
 
 .attention-item--danger {
-  border-left-color: var(--color-danger-500);
-  background: var(--color-danger-50);
+  background: transparent;
 }
 
 .attention-item__main {
@@ -123,6 +128,10 @@
   gap: var(--space-3);
   flex-wrap: wrap;
 }
+
+.stats-grid { gap:0; padding:0 4px; background:var(--surface-secondary); border-radius:12px; }
+.stat-card { border:0; border-radius:0; background:transparent; padding:20px; }
+.stat-card + .stat-card { border-left:1px solid var(--border-strong); }
 
 .activity-timeline {
   display: flex;

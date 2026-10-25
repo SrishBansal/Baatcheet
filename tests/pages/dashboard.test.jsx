@@ -121,8 +121,7 @@ describe('Dashboard Page Rendering (Checkpoint 6)', () => {
 
     // Title and quick actions
     expect(html).toContain('Overview');
-    expect(html).toContain('Review positions');
-    expect(html).toContain('Review interviews');
+    expect(html).toContain('New position');
 
     // Key Operational Stat Cards matching store counts
     expect(html).toContain('Open Positions');

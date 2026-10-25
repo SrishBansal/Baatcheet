@@ -94,33 +94,20 @@ export default function Dashboard() {
       {/* Dashboard Top Header */}
       <div className="dashboard-header">
         <div>
+          <span className="dashboard-eyebrow">RECRUITING WORKSPACE</span>
           <h1 className="dashboard-title">Overview</h1>
           <p className="dashboard-subtitle">
-            Your recruiting activity at a glance.
+            A clear view of your hiring pipeline and what needs attention.
           </p>
         </div>
         <div className="dashboard-header__actions">
-          <Button
-            id="quick-all-positions-btn"
-            variant="secondary"
-            onClick={() => navigate('/positions')}
-          >
-            Review positions
-          </Button>
-          <Button
-            id="quick-completed-interviews-btn"
-            variant="secondary"
-            onClick={() => navigate('/interviews')}
-          >
-            Review interviews
-          </Button>
           <Button
             id="quick-create-position-btn"
             variant="primary"
             icon={<PlusIcon />}
             onClick={() => navigate('/positions/new')}
           >
-            Create position
+            New position
           </Button>
         </div>
       </div>
