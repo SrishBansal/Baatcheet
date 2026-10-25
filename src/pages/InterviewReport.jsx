@@ -17,6 +17,7 @@ import { orchestrateAnalysis } from '../analysis/orchestrator.js';
 import { makeReport, health } from '../data/engineApi.js';
 import { toEngineJob } from '../engine/engineJob.js';
 import GeminiReport from './GeminiReport.jsx';
+import { engineErrorMessage } from '../utils/engineError.js';
 import './InterviewReport.css';
 
 export default function InterviewReport() {
@@ -203,7 +204,7 @@ export default function InterviewReport() {
               <strong>Analysis Status: Failed</strong>
             </div>
             <p className="banner-desc">
-              Automated analysis encountered an error: {analysis.error || 'Unknown analysis error'}.
+              {engineErrorMessage(analysis.error)} <small>{analysis.error}</small>
               The full interview transcript and recorded candidate responses remain intact and verifiable below.
             </p>
             <div className="banner-actions" style={{ marginTop: '0.75rem' }}>

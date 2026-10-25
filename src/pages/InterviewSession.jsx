@@ -13,6 +13,7 @@ import {
 } from '../components/ui/Icons.jsx';
 import './InterviewSession.css';
 import { health } from '../data/engineApi.js';
+import { engineErrorMessage } from '../utils/engineError.js';
 
 export default function InterviewSession() {
   const { jobId } = useParams();
@@ -285,12 +286,12 @@ export default function InterviewSession() {
               alignItems: 'center',
             }}
           >
-            {session.reasoning?.providerKind === 'gemini'
-              ? 'Adaptive: Gemini'
-              : 'Adaptive: fallback (no AI)'}
+            {engineHealth?.geminiConfigured ? `AI: Gemini connected (${engineHealth.model})` : 'AI: NOT configured'}
           </span>
 
-          {isPaused ? (
+          {session.engineError ? (
+            <Badge variant="warning" size="md">Paused: interviewer unavailable</Badge>
+          ) : isPaused ? (
             <Badge variant="warning" size="md">Paused</Badge>
           ) : isSpeaking ? (
             <Badge variant="active" size="md">Interviewer Speaking</Badge>
@@ -378,7 +379,7 @@ export default function InterviewSession() {
 
         {session.engineError && (
           <div className="alert alert--danger engine-error-alert" role="alert" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', margin: '0.75rem 0' }}>
-            <span>Interviewer unavailable: {session.engineError}</span>
+            <span>{engineErrorMessage(session.engineError)} <small style={{ color: '#64748b' }}>{session.engineError}</small></span>
             <Button
               id="retry-turn-btn"
               variant="secondary"
@@ -392,9 +393,6 @@ export default function InterviewSession() {
 
         <div className="active-question-card">
           <div className="active-question-card__header">
-            <Badge variant="draft" size="sm">
-              {session.currentQuestion?.category || 'General'}
-            </Badge>
             {session.activePrompt?.isFollowUp && (
               <Badge variant="active" size="sm">Follow-up</Badge>
             )}
@@ -404,7 +402,7 @@ export default function InterviewSession() {
             {session.activePrompt?.text || 'Loading prompt...'}
           </h2>
 
-          {isSpeaking && (
+          {isSpeaking && !session.engineError && (
             <div className="speaking-indicator">
               <span className="speaking-pulse" />
               <span>Interviewer is speaking... Click to interrupt and answer.</span>

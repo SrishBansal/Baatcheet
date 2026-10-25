@@ -26,6 +26,7 @@ import {
   ChevronRightIcon,
 } from '../components/ui/Icons.jsx';
 import { importJob, suggestQuestions } from '../data/engineApi.js';
+import { engineErrorMessage } from '../utils/engineError.js';
 import './JobConfig.css';
 
 /**
@@ -177,9 +178,6 @@ export default function JobConfig() {
       createSkill({ name: r.name, priority: r.kind === 'preferred' ? 'preferred' : 'required' })
     );
     setSkills(createdSkills);
-    if (createdSkills.length && questions.length === 0) {
-      requestSuggestions(createdSkills, questions);
-    }
 
     setIsImportReviewOpen(false);
     setIsImportPanelOpen(false);
@@ -573,11 +571,7 @@ export default function JobConfig() {
 
               {importError && (
                 <div style={{ color: '#ef4444', fontSize: '0.85rem', marginTop: '0.5rem' }}>
-                  {importError === 'gemini_not_configured'
-                    ? 'Add GEMINI_API_KEY to .env.local and restart the dev server.'
-                    : /^source_blocked/.test(importError)
-                      ? 'This site blocks automated access. Paste the description or upload a PDF.'
-                      : `Error: ${importError}. Keep your inputs — try the Paste text tab.`}
+                  {engineErrorMessage(importError)} <small>{importError}</small>
                 </div>
               )}
 
@@ -863,7 +857,7 @@ export default function JobConfig() {
               </div>
             )}
           </div>
-          {suggestionError && <div className="alert alert--danger" role="alert">{suggestionError} <Button type="button" size="sm" onClick={() => requestSuggestions()}>Retry</Button></div>}
+          {suggestionError && <div className="alert alert--danger" role="alert">{engineErrorMessage(suggestionError)} <small>{suggestionError}</small> <Button type="button" size="sm" onClick={() => requestSuggestions()}>Retry</Button></div>}
         </section>
 
         <section className="config-section"><h2 className="config-section__title">Settings</h2><label><input type="checkbox" checked={allowTyping} onChange={(e) => setAllowTyping(e.target.checked)} /> Allow typed answers</label><p>Typed answers cannot be verified as the candidate's own.</p></section>
