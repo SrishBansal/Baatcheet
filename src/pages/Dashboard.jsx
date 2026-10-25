@@ -94,9 +94,9 @@ export default function Dashboard() {
       {/* Dashboard Top Header */}
       <div className="dashboard-header">
         <div>
-          <h1 className="dashboard-title">Operational Overview</h1>
+          <h1 className="dashboard-title">Overview</h1>
           <p className="dashboard-subtitle">
-            Pipeline health, live screening status, and items requiring recruiter review.
+            Your recruiting activity at a glance.
           </p>
         </div>
         <div className="dashboard-header__actions">
@@ -105,14 +105,14 @@ export default function Dashboard() {
             variant="secondary"
             onClick={() => navigate('/positions')}
           >
-            All Positions ({jobs.length})
+            Review positions
           </Button>
           <Button
             id="quick-completed-interviews-btn"
             variant="secondary"
             onClick={() => navigate('/interviews')}
           >
-            Review Queue ({completedSessions.length})
+            Review interviews
           </Button>
           <Button
             id="quick-create-position-btn"
@@ -120,7 +120,7 @@ export default function Dashboard() {
             icon={<PlusIcon />}
             onClick={() => navigate('/positions/new')}
           >
-            New Position
+            Create position
           </Button>
         </div>
       </div>

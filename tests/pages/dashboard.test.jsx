@@ -46,7 +46,7 @@ describe('Dashboard Page Rendering (Checkpoint 6)', () => {
   it('renders honest empty state when store has zero jobs and sessions', () => {
     const html = renderDashboard();
 
-    expect(html).toContain('Operational Overview');
+    expect(html).toContain('Overview');
     expect(html).toContain('No recruitment activity recorded yet');
     expect(html).toContain('Create First Position');
     // Ensure no job editing form is present on dashboard
@@ -120,9 +120,9 @@ describe('Dashboard Page Rendering (Checkpoint 6)', () => {
     const html = renderDashboard();
 
     // Title and quick actions
-    expect(html).toContain('Operational Overview');
-    expect(html).toMatch(/All Positions.*3/);
-    expect(html).toMatch(/Review Queue.*2/); // 2 completed sessions
+    expect(html).toContain('Overview');
+    expect(html).toContain('Review positions');
+    expect(html).toContain('Review interviews');
 
     // Key Operational Stat Cards matching store counts
     expect(html).toContain('Open Positions');

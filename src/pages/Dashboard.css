@@ -5,7 +5,7 @@
 .dashboard-page {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--space-8);
   max-width: var(--content-max-width);
 }
 
@@ -18,7 +18,7 @@
 }
 
 .dashboard-title {
-  font-size: var(--text-2xl);
+  font-size: 28px;
   font-weight: var(--font-bold);
   color: var(--color-text-primary);
 }
@@ -37,7 +37,7 @@
 
 .dashboard-main-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1.85fr) minmax(280px, 1fr);
   gap: var(--space-6);
 }
 
@@ -48,7 +48,7 @@
 }
 
 .dashboard-card {
-  padding: var(--space-5);
+  padding: 20px 24px;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
