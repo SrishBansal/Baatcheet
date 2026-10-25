@@ -48,6 +48,7 @@ export function createSkill(overrides = {}) {
  * @property {number} order - Display/ask order (0-based)
  * @property {number} maxFollowUps - Max follow-up questions allowed (0 = none)
  * @property {string[]} relatedSkills - IDs of skills this question assesses
+ * @property {string[]} [requirementIds] - IDs of job requirements assessed (defaults to relatedSkills)
  */
 
 /**
@@ -56,13 +57,17 @@ export function createSkill(overrides = {}) {
  * @returns {InterviewQuestion}
  */
 export function createQuestion(overrides = {}) {
+  const relatedSkills = overrides.relatedSkills || [];
+  const requirementIds = overrides.requirementIds || relatedSkills;
+
   return {
     id: generateId(),
     text: '',
     category: 'general',
     order: 0,
     maxFollowUps: 1,
-    relatedSkills: [],
+    relatedSkills,
+    requirementIds,
     ...overrides,
   };
 }
@@ -158,3 +163,46 @@ export const QUESTION_CATEGORIES = ['technical', 'behavioral', 'situational', 'g
  * Skill priorities.
  */
 export const SKILL_PRIORITIES = ['required', 'preferred'];
+
+/**
+ * Validate a Job object against JOB_SCHEMA.
+ * Returns structured errors rather than throwing so UI can display field-level feedback.
+ *
+ * @param {object} job
+ * @returns {{ valid: boolean, errors: Record<string, string> }}
+ */
+export function validateJob(job) {
+  const errors = {};
+  if (!job || typeof job !== 'object') {
+    return { valid: false, errors: { _base: 'Job must be an object.' } };
+  }
+
+  for (const [field, rules] of Object.entries(JOB_SCHEMA)) {
+    const value = job[field];
+
+    if (rules.required && (value === undefined || value === null || value === '')) {
+      errors[field] = `${field} is required.`;
+      continue;
+    }
+
+    if (value !== undefined && value !== null && value !== '') {
+      if (rules.type === 'string' && typeof value !== 'string') {
+        errors[field] = `${field} must be a string.`;
+        continue;
+      }
+      if (rules.type === 'array' && !Array.isArray(value)) {
+        errors[field] = `${field} must be an array.`;
+        continue;
+      }
+      if (rules.minLength !== undefined && typeof value === 'string' && value.length < rules.minLength) {
+        errors[field] = `${field} must be at least ${rules.minLength} character(s).`;
+        continue;
+      }
+      if (rules.maxLength !== undefined && typeof value === 'string' && value.length > rules.maxLength) {
+        errors[field] = `${field} must be at most ${rules.maxLength} characters.`;
+      }
+    }
+  }
+
+  return { valid: Object.keys(errors).length === 0, errors };
+}

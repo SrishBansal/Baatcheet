@@ -84,6 +84,7 @@ function createCollection(collectionName) {
 
     /**
      * Update an existing item. Merges the update into the existing item.
+     * Automatically stamps `updatedAt` for job-like entities that carry the field.
      * @param {string} id
      * @param {object} updates - Partial updates to merge
      * @returns {object} The updated item
@@ -94,7 +95,11 @@ function createCollection(collectionName) {
       if (index === -1) {
         throw new Error(`Item with id ${id} not found in ${collectionName}`);
       }
-      items[index] = { ...items[index], ...updates, id }; // Prevent id overwrite
+      const stamped =
+        'updatedAt' in items[index]
+          ? { updatedAt: new Date().toISOString() }
+          : {};
+      items[index] = { ...items[index], ...updates, ...stamped, id }; // Prevent id overwrite
       _write(items);
       return items[index];
     },
@@ -129,14 +134,13 @@ function createCollection(collectionName) {
   };
 }
 
+import { sessionStore } from './sessions.js';
+
 /**
  * The application data store.
  * Add new collections here as the application grows.
  */
 export const store = {
   jobs: createCollection('jobs'),
-  // Future collections:
-  // interviews: createCollection('interviews'),
-  // transcripts: createCollection('transcripts'),
-  // reports: createCollection('reports'),
+  sessions: sessionStore,
 };
