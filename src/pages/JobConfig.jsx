@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { store } from '../data/store.js';
 import {
@@ -25,7 +25,7 @@ import {
   TargetIcon,
   ChevronRightIcon,
 } from '../components/ui/Icons.jsx';
-import { computeContentOverlap } from '../utils/jobImport.js';
+import { importJob } from '../data/engineApi.js';
 import './JobConfig.css';
 
 /**
@@ -48,16 +48,19 @@ export default function JobConfig() {
   const [errors, setErrors] = useState({});
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // LinkedIn / Paste Import state
+  // Import state
   const [isImportPanelOpen, setIsImportPanelOpen] = useState(false);
-  const [importMode, setImportMode] = useState('url'); // 'url' | 'paste'
-  const [linkedinUrl, setLinkedinUrl] = useState('');
+  const [importMode, setImportMode] = useState('link'); // 'link' | 'upload' | 'paste'
+  const [importUrl, setImportUrl] = useState('');
   const [pastedJobText, setPastedJobText] = useState('');
+  const [importFile, setImportFile] = useState(null);
   const [isImportLoading, setIsImportLoading] = useState(false);
   const [importError, setImportError] = useState('');
   const [importReviewData, setImportReviewData] = useState(null);
+  const [importDiscarded, setImportDiscarded] = useState(0);
   const [isImportReviewOpen, setIsImportReviewOpen] = useState(false);
   const [importSuccessBanner, setImportSuccessBanner] = useState('');
+  const fileInputRef = useRef(null);
 
   // New skill inline draft
   const [newSkillName, setNewSkillName] = useState('');
@@ -99,197 +102,90 @@ export default function JobConfig() {
     }
   }, [id, isEditing, navigate]);
 
-  // LinkedIn Import handler
-  // LinkedIn Import handler
-  const handleStartLinkedInImport = async () => {
-    const trimmed = linkedinUrl.trim();
+  // Unified import handler — calls engine /api/job
+  const handleStartImport = async () => {
     setImportError('');
-
-    if (!trimmed) {
-      setImportError('Please enter a LinkedIn job posting URL.');
-      return;
-    }
-
-    if (!trimmed.toLowerCase().includes('linkedin.com/jobs')) {
-      setImportError(
-        'Invalid LinkedIn URL. Please provide a URL in the format: https://www.linkedin.com/jobs/view/123456789'
-      );
-      return;
-    }
-
     setIsImportLoading(true);
-
     try {
-      const res = await fetch(`/api/fetch-linkedin?url=${encodeURIComponent(trimmed)}`);
-      const json = await res.json();
-      if (!res.ok || !json.ok) {
-        throw new Error(json.error || `HTTP ${res.status}`);
-      }
-
-      const extracted = json.data;
-      setImportReviewData({
-        title: extracted.title || 'Imported Position',
-        description: extracted.description || '',
-        skills: (extracted.requirements || extracted.skills || []).map((r) => ({
-          name: r.title || r.name,
-          priority: r.priority || r.weight || 'required',
-        })),
-        questions: (extracted.questions || []).map((q) => ({
-          text: q.text || q.question,
-          category: q.category || 'technical',
-          maxFollowUps: q.maxFollowUps ?? 1,
-        })),
-        criteria: (extracted.criteria || []).map((c) => ({
-          name: c.name || c.title,
-          description: c.description,
-        })),
-        provenance: extracted.provenance || 'extracted',
-      });
-      setIsImportReviewOpen(true);
-    } catch (err) {
-      // Graceful fallback to client-side parseLinkedInPosting
-      try {
-        const fallback = parseLinkedInPosting(trimmed);
-        setImportReviewData(fallback);
-        setIsImportReviewOpen(true);
-      } catch {
-        setImportError(err.message || 'Failed to fetch or parse LinkedIn posting.');
-      }
-    } finally {
-      setIsImportLoading(false);
-    }
-  };
-
-  // Paste Import handler with content word overlap verification (>=70%)
-  const handleStartPasteImport = async () => {
-    const trimmed = pastedJobText.trim();
-    setImportError('');
-
-    if (!trimmed || trimmed.length < 50) {
-      setImportError('Please paste at least 50 characters of job posting text.');
-      return;
-    }
-
-    setIsImportLoading(true);
-
-    try {
-      const res = await fetch('/api/parse-job', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: trimmed }),
-      });
-
-      let parsedData = null;
-      if (res.ok) {
-        const json = await res.json();
-        if (json.ok && json.data) {
-          parsedData = json.data;
+      let body;
+      if (importMode === 'link') {
+        const trimmed = importUrl.trim();
+        if (!trimmed) { setImportError('Please enter a URL.'); setIsImportLoading(false); return; }
+        body = { url: trimmed };
+      } else if (importMode === 'upload') {
+        if (!importFile) { setImportError('Please select a file.'); setIsImportLoading(false); return; }
+        const name = importFile.name.toLowerCase();
+        if (name.endsWith('.pdf')) {
+          if (importFile.size > 5 * 1024 * 1024) {
+            setImportError('file_too_large');
+            setIsImportLoading(false);
+            return;
+          }
+          const buf = await importFile.arrayBuffer();
+          const bytes = new Uint8Array(buf);
+          let bin = '';
+          for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+          body = { pdfBase64: btoa(bin) };
+        } else {
+          const fileText = await importFile.text();
+          body = { fileText };
         }
+      } else {
+        const trimmed = pastedJobText.trim();
+        if (!trimmed) { setImportError('Please paste some text.'); setIsImportLoading(false); return; }
+        body = { text: trimmed };
       }
 
-      if (!parsedData) {
-        // Fallback segmentation if endpoint not responding
-        parsedData = {
-          title: 'Position from Job Description',
-          description: trimmed.slice(0, 300) + '...',
-          requirements: [
-            { title: 'Core Competency', weight: 'required' },
-            { title: 'Technical Problem Solving', weight: 'required' },
-          ],
-          suggestedQuestions: [
-            { question: 'Could you walk through your experience relevant to this role?' },
-          ],
-        };
-      }
-
-      const extractedSkills = (parsedData.requirements || []).map((r) => ({
-        name: r.title || r.name,
-        priority: r.weight || r.priority || 'required',
-      }));
-
-      const extractedQuestions = (parsedData.suggestedQuestions || []).map((q) => ({
-        text: q.question || q.text,
-        category: 'technical',
-        maxFollowUps: 1,
-      }));
-
-      const extractedSummary = `${parsedData.title || ''} ${parsedData.description || ''} ${extractedSkills.map((s) => s.name).join(' ')}`;
-      const overlap = computeContentOverlap(extractedSummary, trimmed);
-
-      setImportReviewData({
-        title: parsedData.title || 'Pasted Position',
-        description: parsedData.description || '',
-        skills: extractedSkills,
-        questions: extractedQuestions,
-        criteria: [],
-        provenance: 'pasted',
-        overlapRatio: overlap.ratio,
-        overlapVerified: overlap.verified,
-      });
+      const result = await importJob(body);
+      setImportReviewData(result.job);
+      setImportDiscarded(result.discarded || 0);
       setIsImportReviewOpen(true);
     } catch (err) {
-      setImportError(err.message || 'Failed to parse pasted job posting.');
+      const code = err.message || 'server_error';
+      setImportError(code);
+      setImportMode('paste');
     } finally {
       setIsImportLoading(false);
     }
   };
+
+  // Edit fields in review modal
+  const [reviewTitle, setReviewTitle] = useState('');
+  const [reviewCompany, setReviewCompany] = useState('');
+  const [reviewSummary, setReviewSummary] = useState('');
+  const [reviewReqs, setReviewReqs] = useState([]);
+
+  useEffect(() => {
+    if (importReviewData) {
+      setReviewTitle(importReviewData.title || '');
+      setReviewCompany(importReviewData.company || '');
+      setReviewSummary(importReviewData.summary || '');
+      setReviewReqs((importReviewData.requirements || []).map((r) => ({ ...r })));
+    }
+  }, [importReviewData]);
 
   const handleApplyImportedRole = () => {
     if (!importReviewData) return;
 
-    setTitle(importReviewData.title);
-    setDescription(importReviewData.description);
+    setTitle(reviewTitle);
+    setDescription(reviewSummary);
 
-    // Map extracted skills
-    const createdSkills = importReviewData.skills.map((s) =>
-      createSkill({ name: s.name, priority: s.priority })
+    const createdSkills = reviewReqs.map((r) =>
+      createSkill({ name: r.name, priority: r.kind === 'preferred' ? 'preferred' : 'required' })
     );
     setSkills(createdSkills);
-
-    // Map extracted questions with skill linkages
-    const questionsToApply =
-      importReviewData.questions && importReviewData.questions.length > 0
-        ? importReviewData.questions
-        : [
-            {
-              text: `Can you describe your experience with ${createdSkills[0]?.name || 'the required competencies'} in a production setting?`,
-              category: 'technical',
-              maxFollowUps: 1,
-            },
-          ];
-
-    const createdQuestions = questionsToApply.map((q, idx) =>
-      createQuestion({
-        text: q.text,
-        category: q.category || 'technical',
-        order: idx,
-        maxFollowUps: q.maxFollowUps ?? 1,
-        relatedSkills: createdSkills.slice(0, 2).map((s) => s.id),
-      })
-    );
-    setQuestions(createdQuestions);
-
-    // Map criteria
-    const criteriaToApply =
-      importReviewData.criteria && importReviewData.criteria.length > 0
-        ? importReviewData.criteria
-        : createdSkills.map((s) => ({
-            name: `${s.name} Proficiency`,
-            description: `Demonstrates verified capability in ${s.name}.`,
-          }));
-
-    const createdCriteria = criteriaToApply.map((c) =>
-      createCriterion({
-        name: c.name,
-        description: c.description,
-        relatedSkills: createdSkills.slice(0, 2).map((s) => s.id),
-      })
-    );
-    setCriteria(createdCriteria);
+    // Questions are NOT generated on import — leave existing questions untouched (spec)
 
     setIsImportReviewOpen(false);
     setIsImportPanelOpen(false);
-    setImportSuccessBanner(`Successfully imported "${importReviewData.title}".`);
+    if (importReviewData.source) {
+      // Store source fields on job for display
+      setDescription([
+        reviewSummary,
+        (importReviewData.responsibilities || []).join('\n'),
+      ].filter(Boolean).join('\n\n').slice(0, 2000));
+    }
+    setImportSuccessBanner(`Imported "${reviewTitle}". Questions unchanged.`);
     setTimeout(() => setImportSuccessBanner(''), 6000);
   };
 
@@ -568,10 +464,10 @@ export default function JobConfig() {
         <div className="linkedin-import-box">
           <div className="linkedin-import-box__header">
             <div className="linkedin-import-box__title-group">
-              <span className="linkedin-badge">LinkedIn Import</span>
-              <h3 className="linkedin-import-box__title">Import Role from LinkedIn Job Posting</h3>
+              <span className="linkedin-badge">Import Role</span>
+              <h3 className="linkedin-import-box__title">Import Role from Job Posting</h3>
               <p className="linkedin-import-box__desc">
-                Paste a public LinkedIn job URL to automatically extract role title, required competencies, and screening questions.
+                Import a job posting by URL, PDF/text upload, or paste. Title and requirements will be extracted.
               </p>
             </div>
             <Button
@@ -581,107 +477,107 @@ export default function JobConfig() {
               size="sm"
               onClick={() => setIsImportPanelOpen(!isImportPanelOpen)}
             >
-              {isImportPanelOpen ? 'Hide Importer' : 'Import from LinkedIn URL'}
+              {isImportPanelOpen ? 'Hide Importer' : 'Import Role'}
             </Button>
           </div>
 
           {isImportPanelOpen && (
             <div className="linkedin-import-box__body">
               <div className="import-mode-tabs" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-                <Button
-                  id="tab-url-import-btn"
-                  type="button"
-                  size="sm"
-                  variant={importMode === 'url' ? 'primary' : 'ghost'}
-                  onClick={() => {
-                    setImportMode('url');
-                    setImportError('');
-                  }}
-                >
-                  LinkedIn URL
-                </Button>
-                <Button
-                  id="tab-paste-import-btn"
-                  type="button"
-                  size="sm"
-                  variant={importMode === 'paste' ? 'primary' : 'ghost'}
-                  onClick={() => {
-                    setImportMode('paste');
-                    setImportError('');
-                  }}
-                >
-                  Paste Job Description
-                </Button>
+                {['link', 'upload', 'paste'].map((m) => (
+                  <Button
+                    key={m}
+                    id={`tab-${m}-import-btn`}
+                    type="button"
+                    size="sm"
+                    variant={importMode === m ? 'primary' : 'ghost'}
+                    onClick={() => { setImportMode(m); setImportError(''); }}
+                  >
+                    {m === 'link' ? 'Link' : m === 'upload' ? 'Upload PDF/TXT' : 'Paste text'}
+                  </Button>
+                ))}
               </div>
 
-              {importMode === 'url' ? (
+              {importMode === 'link' && (
                 <div className="linkedin-input-row">
                   <div className="linkedin-input-wrapper">
                     <Input
-                      id="linkedin-url-input"
-                      placeholder="https://www.linkedin.com/jobs/view/..."
-                      value={linkedinUrl}
-                      onChange={(e) => {
-                        setLinkedinUrl(e.target.value);
-                        setImportError('');
-                      }}
-                      error={importError}
-                      hint="Accepts public LinkedIn job URLs (e.g., https://www.linkedin.com/jobs/view/123456789)"
+                      id="import-url-input"
+                      placeholder="https://www.linkedin.com/jobs/view/... or any job posting URL"
+                      value={importUrl}
+                      onChange={(e) => { setImportUrl(e.target.value); setImportError(''); }}
+                      hint="Supports LinkedIn job URLs and other public job pages"
                     />
-                  </div>
-                  <Button
-                    id="submit-linkedin-import-btn"
-                    type="button"
-                    variant="primary"
-                    disabled={isImportLoading}
-                    onClick={handleStartLinkedInImport}
-                  >
-                    {isImportLoading ? 'Analyzing Posting...' : 'Analyze & Review'}
-                  </Button>
-                </div>
-              ) : (
-                <div className="paste-input-stack" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  <textarea
-                    id="paste-job-textarea"
-                    rows={6}
-                    placeholder="Paste the full job posting description here..."
-                    value={pastedJobText}
-                    onChange={(e) => {
-                      setPastedJobText(e.target.value);
-                      setImportError('');
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '0.75rem',
-                      borderRadius: '6px',
-                      border: '1px solid var(--color-border, #cbd5e1)',
-                      fontFamily: 'inherit',
-                      fontSize: '0.875rem',
-                    }}
-                  />
-                  {importError && (
-                    <span className="input-error" style={{ color: '#ef4444', fontSize: '0.85rem' }}>
-                      {importError}
-                    </span>
-                  )}
-                  <div>
-                    <Button
-                      id="submit-paste-import-btn"
-                      type="button"
-                      variant="primary"
-                      disabled={isImportLoading}
-                      onClick={handleStartPasteImport}
-                    >
-                      {isImportLoading ? 'Extracting Specifications...' : 'Parse & Extract Specifications'}
-                    </Button>
                   </div>
                 </div>
               )}
 
+              {importMode === 'upload' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <input
+                    id="import-file-input"
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,.txt,.md"
+                    style={{ display: 'none' }}
+                    onChange={(e) => { setImportFile(e.target.files[0] || null); setImportError(''); }}
+                  />
+                  <Button
+                    id="import-file-select-btn"
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {importFile ? importFile.name : 'Choose PDF or TXT/MD file…'}
+                  </Button>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted, #64748b)' }}>PDF max 5 MB. Text/Markdown accepted.</span>
+                </div>
+              )}
+
+              {importMode === 'paste' && (
+                <div className="paste-input-stack" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <textarea
+                    id="paste-job-textarea"
+                    rows={6}
+                    placeholder="Paste the full job posting description here…"
+                    value={pastedJobText}
+                    onChange={(e) => { setPastedJobText(e.target.value); setImportError(''); }}
+                    style={{
+                      width: '100%', padding: '0.75rem', borderRadius: '6px',
+                      border: '1px solid var(--color-border, #cbd5e1)',
+                      fontFamily: 'inherit', fontSize: '0.875rem',
+                    }}
+                  />
+                </div>
+              )}
+
+              {importError && (
+                <div style={{ color: '#ef4444', fontSize: '0.85rem', marginTop: '0.5rem' }}>
+                  {importError === 'gemini_not_configured'
+                    ? 'Add GEMINI_API_KEY to .env.local and restart the dev server.'
+                    : /^source_blocked/.test(importError)
+                      ? 'This site blocks automated access. Paste the description or upload a PDF.'
+                      : `Error: ${importError}. Keep your inputs — try the Paste text tab.`}
+                </div>
+              )}
+
+              <div style={{ marginTop: '1rem' }}>
+                <Button
+                  id="submit-import-btn"
+                  type="button"
+                  variant="primary"
+                  disabled={isImportLoading}
+                  onClick={handleStartImport}
+                >
+                  {isImportLoading ? 'Importing…' : 'Import & Review'}
+                </Button>
+              </div>
+
               {isImportLoading && (
                 <div className="linkedin-loading-indicator" role="status" style={{ marginTop: '0.75rem' }}>
                   <span className="loading-spinner" />
-                  <span>Connecting to AI parser and extracting structured competencies...</span>
+                  <span>Extracting job details via AI…</span>
                 </div>
               )}
             </div>
@@ -1021,19 +917,24 @@ export default function JobConfig() {
         </section>
       </form>
 
-      {/* LinkedIn Import Review Modal */}
+      {/* Import Review Modal */}
       <Modal
-        id="linkedin-review-modal"
+        id="import-review-modal"
         open={isImportReviewOpen}
         onClose={() => setIsImportReviewOpen(false)}
-        title="Review Extracted LinkedIn Role"
+        title="Review imported role"
         size="lg"
         footer={
           <div className="modal-actions">
             <Button variant="secondary" onClick={() => setIsImportReviewOpen(false)}>
               Discard
             </Button>
-            <Button id="apply-import-btn" variant="primary" onClick={handleApplyImportedRole}>
+            <Button
+              id="apply-import-btn"
+              variant="primary"
+              disabled={!reviewTitle.trim() || reviewReqs.length === 0}
+              onClick={handleApplyImportedRole}
+            >
               Apply to Role Configuration
             </Button>
           </div>
@@ -1041,65 +942,88 @@ export default function JobConfig() {
       >
         {importReviewData && (
           <div className="import-review-stack">
-            {importReviewData.overlapRatio !== undefined && (
-              <div
-                className="import-review-notice"
-                style={{
-                  background: importReviewData.overlapVerified ? '#f0fdf4' : '#fffbeb',
-                  border: `1px solid ${importReviewData.overlapVerified ? '#86efac' : '#fde68a'}`,
-                  color: importReviewData.overlapVerified ? '#166534' : '#92400e',
-                  padding: '0.75rem',
-                  borderRadius: '6px',
-                  marginBottom: '1rem',
-                }}
-              >
-                <strong>Content Overlap Verification: </strong>
-                {Math.round(importReviewData.overlapRatio * 100)}% word overlap with source text.
-                {importReviewData.overlapVerified
-                  ? ' High fidelity verified (≥70%).'
-                  : ' Caution: low direct word overlap (<70%). Review specifications carefully.'}
+            {importDiscarded > 0 && (
+              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', padding: '0.6rem 0.9rem', borderRadius: '6px', marginBottom: '0.75rem', fontSize: '0.85rem' }}>
+                {importDiscarded} unsupported item(s) discarded (low word overlap with source).
+              </div>
+            )}
+
+            {importReviewData.source && (
+              <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted, #64748b)', marginBottom: '0.5rem' }}>
+                Source: <strong>{importReviewData.source.label}</strong>
+                {importReviewData.source.url && <> · <a href={importReviewData.source.url} target="_blank" rel="noopener noreferrer">{importReviewData.source.url}</a></>}
+                {importReviewData.source.fetchedAt && <> · fetched {new Date(importReviewData.source.fetchedAt).toLocaleString()}</>}
               </div>
             )}
 
             <div className="import-review-field">
-              <label className="import-review-label">Extracted Position Title</label>
-              <div className="import-review-value">{importReviewData.title}</div>
+              <label className="import-review-label">Title *</label>
+              <input
+                id="review-title-input"
+                value={reviewTitle}
+                onChange={(e) => setReviewTitle(e.target.value)}
+                style={{ width: '100%', padding: '0.4rem 0.6rem', borderRadius: '4px', border: '1px solid var(--color-border, #cbd5e1)', fontFamily: 'inherit', fontSize: '0.9rem' }}
+              />
             </div>
 
             <div className="import-review-field">
-              <label className="import-review-label">Role Description</label>
-              <div className="import-review-value">{importReviewData.description}</div>
+              <label className="import-review-label">Company</label>
+              <input
+                id="review-company-input"
+                value={reviewCompany}
+                onChange={(e) => setReviewCompany(e.target.value)}
+                style={{ width: '100%', padding: '0.4rem 0.6rem', borderRadius: '4px', border: '1px solid var(--color-border, #cbd5e1)', fontFamily: 'inherit', fontSize: '0.9rem' }}
+              />
             </div>
 
             <div className="import-review-field">
-              <label className="import-review-label">
-                Identified Competencies ({importReviewData.skills.length})
-              </label>
-              <div className="skill-chips-wrap">
-                {importReviewData.skills.map((s, i) => (
-                  <span
-                    key={i}
-                    className={`skill-chip ${
-                      s.priority === 'required' ? 'skill-chip--required' : 'skill-chip--preferred'
-                    }`}
-                  >
-                    {s.name} ({s.priority})
-                  </span>
-                ))}
+              <label className="import-review-label">Summary</label>
+              <textarea
+                id="review-summary-input"
+                rows={3}
+                value={reviewSummary}
+                onChange={(e) => setReviewSummary(e.target.value)}
+                style={{ width: '100%', padding: '0.4rem 0.6rem', borderRadius: '4px', border: '1px solid var(--color-border, #cbd5e1)', fontFamily: 'inherit', fontSize: '0.9rem' }}
+              />
+            </div>
+
+            {(importReviewData.responsibilities || []).length > 0 && (
+              <div className="import-review-field">
+                <label className="import-review-label">Responsibilities</label>
+                <ul className="import-review-list">
+                  {importReviewData.responsibilities.map((r, i) => <li key={i}>{r}</li>)}
+                </ul>
               </div>
-            </div>
+            )}
 
             <div className="import-review-field">
-              <label className="import-review-label">
-                Recommended Structured Questions ({importReviewData.questions.length})
-              </label>
-              <ul className="import-review-list">
-                {importReviewData.questions.map((q, i) => (
-                  <li key={i}>
-                    <strong>Q{i + 1}:</strong> {q.text} <em>({q.category})</em>
-                  </li>
-                ))}
-              </ul>
+              <label className="import-review-label">Requirements ({reviewReqs.length}) *</label>
+              {reviewReqs.length === 0 && (
+                <p style={{ color: '#ef4444', fontSize: '0.85rem' }}>At least 1 requirement is required to apply.</p>
+              )}
+              {reviewReqs.map((r, i) => (
+                <div key={i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.3rem' }}>
+                  <input
+                    value={r.name}
+                    onChange={(e) => setReviewReqs(reviewReqs.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
+                    style={{ flex: 1, padding: '0.3rem 0.5rem', borderRadius: '4px', border: '1px solid var(--color-border, #cbd5e1)', fontFamily: 'inherit', fontSize: '0.85rem' }}
+                  />
+                  <select
+                    value={r.kind}
+                    onChange={(e) => setReviewReqs(reviewReqs.map((x, j) => j === i ? { ...x, kind: e.target.value } : x))}
+                    style={{ padding: '0.3rem', borderRadius: '4px', border: '1px solid var(--color-border, #cbd5e1)', fontSize: '0.85rem' }}
+                  >
+                    <option value="required">required</option>
+                    <option value="preferred">preferred</option>
+                  </select>
+                  <button type="button" onClick={() => setReviewReqs(reviewReqs.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '1rem' }}>✕</button>
+                </div>
+              ))}
+              <Button
+                type="button" size="sm" variant="ghost"
+                onClick={() => setReviewReqs([...reviewReqs, { name: '', kind: 'required' }])}
+                style={{ marginTop: '0.25rem' }}
+              >+ Add requirement</Button>
             </div>
           </div>
         )}
@@ -1280,193 +1204,5 @@ export default function JobConfig() {
       </Modal>
     </div>
   );
-}
-
-/**
- * Client-side parser for LinkedIn job posting URL or metadata.
- */
-export function parseLinkedInPosting(url) {
-  const lowerUrl = url.toLowerCase();
-
-  let roleTitle = 'Software Engineer';
-  let roleDesc =
-    'As a key member of our engineering team, you will design, develop, and maintain robust web systems and user-facing features.';
-  let skillsList = [
-    { name: 'JavaScript / TypeScript', priority: 'required' },
-    { name: 'System Architecture', priority: 'required' },
-    { name: 'Testing & Code Quality', priority: 'preferred' },
-    { name: 'Technical Collaboration', priority: 'preferred' },
-  ];
-  let questionsList = [
-    {
-      text: 'Can you walk through a recent technical project you built, explaining the architectural decisions and key trade-offs you made?',
-      category: 'technical',
-      maxFollowUps: 2,
-    },
-    {
-      text: 'How do you approach debugging complex, intermittent issues in a distributed or production environment?',
-      category: 'technical',
-      maxFollowUps: 1,
-    },
-    {
-      text: 'Describe a situation where you had to push back on requirements or negotiate technical debt with product stakeholders.',
-      category: 'behavioral',
-      maxFollowUps: 1,
-    },
-  ];
-  let criteriaList = [
-    {
-      name: 'System Architecture & Design',
-      description:
-        'Candidate demonstrates clear reasoning about component boundaries, data flow, and trade-offs.',
-    },
-    {
-      name: 'Analytical Problem Solving',
-      description:
-        'Candidate articulates a structured debugging approach with systematic root-cause analysis.',
-    },
-    {
-      name: 'Stakeholder Communication',
-      description:
-        'Candidate effectively communicates technical trade-offs and collaborates constructively with non-technical partners.',
-    },
-  ];
-
-  if (
-    lowerUrl.includes('frontend') ||
-    lowerUrl.includes('react') ||
-    lowerUrl.includes('ui') ||
-    lowerUrl.includes('web')
-  ) {
-    roleTitle = 'Senior Frontend Engineer';
-    roleDesc =
-      'Lead the development of modern, accessible, and performant web interfaces using React, TypeScript, and modern CSS architecture.';
-    skillsList = [
-      { name: 'React Architecture', priority: 'required' },
-      { name: 'TypeScript', priority: 'required' },
-      { name: 'Web Performance & Accessibility (WCAG)', priority: 'required' },
-      { name: 'State Management & Component Design', priority: 'preferred' },
-      { name: 'Cross-browser Compatibility', priority: 'preferred' },
-    ];
-    questionsList = [
-      {
-        text: 'Walk me through how you architect complex frontend state and component hierarchies in a large-scale React application.',
-        category: 'technical',
-        maxFollowUps: 2,
-      },
-      {
-        text: 'How do you identify and resolve performance bottlenecks, layout thrashing, or excessive re-renders in modern web apps?',
-        category: 'technical',
-        maxFollowUps: 1,
-      },
-      {
-        text: 'Tell me about a time when you had to reconcile accessibility standards with demanding visual design requirements.',
-        category: 'situational',
-        maxFollowUps: 1,
-      },
-    ];
-    criteriaList = [
-      {
-        name: 'Component Architecture & State Decomposition',
-        description:
-          'Evaluates candidate understanding of component boundaries, separation of concerns, and unidirectional data flow.',
-      },
-      {
-        name: 'Web Performance Optimization',
-        description:
-          'Candidate identifies rendering bottlenecks, profiling techniques, and asset delivery optimizations.',
-      },
-      {
-        name: 'Accessibility Awareness',
-        description:
-          'Candidate demonstrates practical understanding of semantic HTML, ARIA patterns, and keyboard navigation.',
-      },
-    ];
-  } else if (
-    lowerUrl.includes('backend') ||
-    lowerUrl.includes('platform') ||
-    lowerUrl.includes('api') ||
-    lowerUrl.includes('data')
-  ) {
-    roleTitle = 'Senior Backend Engineer';
-    roleDesc =
-      'Design and operate scalable APIs, distributed services, and data pipelines with high reliability and low latency.';
-    skillsList = [
-      { name: 'Distributed Systems', priority: 'required' },
-      { name: 'API Design (REST / GraphQL / gRPC)', priority: 'required' },
-      { name: 'Database Optimization & SQL', priority: 'required' },
-      { name: 'Observability & Fault Tolerance', priority: 'preferred' },
-    ];
-    questionsList = [
-      {
-        text: 'How do you design APIs for high concurrency, idempotency, and backward compatibility across versions?',
-        category: 'technical',
-        maxFollowUps: 2,
-      },
-      {
-        text: 'Describe an outage or production incident you mitigated. How did you diagnose the issue and prevent future occurrences?',
-        category: 'situational',
-        maxFollowUps: 1,
-      },
-    ];
-    criteriaList = [
-      {
-        name: 'Distributed Systems & Scalability',
-        description:
-          'Candidate understands partitioning, caching, consensus, and fault domain isolation.',
-      },
-      {
-        name: 'Incident Response & Resilience',
-        description:
-          'Candidate demonstrates calm, systematic troubleshooting and implements defensive architectural safeguards.',
-      },
-    ];
-  } else if (
-    lowerUrl.includes('product') ||
-    lowerUrl.includes('manager') ||
-    lowerUrl.includes('pm')
-  ) {
-    roleTitle = 'Product Manager';
-    roleDesc =
-      'Drive product discovery, define evidence-based roadmaps, and align cross-functional engineering and design teams.';
-    skillsList = [
-      { name: 'Product Discovery & User Research', priority: 'required' },
-      { name: 'Data-driven Prioritization', priority: 'required' },
-      { name: 'Cross-functional Alignment', priority: 'preferred' },
-    ];
-    questionsList = [
-      {
-        text: 'How do you prioritize competing feature requests from enterprise customers against technical debt and core product roadmap?',
-        category: 'situational',
-        maxFollowUps: 2,
-      },
-      {
-        text: 'Tell me about a feature you launched that failed to meet its target metrics. What did you learn and how did you pivot?',
-        category: 'behavioral',
-        maxFollowUps: 1,
-      },
-    ];
-    criteriaList = [
-      {
-        name: 'Prioritization Framework',
-        description:
-          'Candidate demonstrates a rigorous, outcome-oriented framework for trade-off evaluation.',
-      },
-      {
-        name: 'Learning & Iteration Velocity',
-        description:
-          'Candidate treats failures as diagnostic signals and adjusts strategy based on qualitative and quantitative evidence.',
-      },
-    ];
-  }
-
-  return {
-    title: roleTitle,
-    description: roleDesc,
-    skills: skillsList,
-    questions: questionsList,
-    criteria: criteriaList,
-    sourceUrl: url,
-  };
 }
 
