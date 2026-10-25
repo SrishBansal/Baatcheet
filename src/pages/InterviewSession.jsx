@@ -29,7 +29,14 @@ export default function InterviewSession() {
     }
   }, [jobId]);
 
-  const session = useInterviewSession(job, { interviewId: `session-${jobId}-${Date.now()}` });
+  // Compute a stable interviewId once per component mount.
+  // IMPORTANT: Do NOT use Date.now() inline in the options object passed to useInterviewSession.
+  // useInterviewSession lists options.interviewId in its useEffect dependency array; an inline
+  // object literal with Date.now() produces a new value on every render, which causes the effect
+  // to re-run, destroying and recreating the InterviewController on every forceUpdate() call.
+  const interviewIdRef = React.useRef(`session-${jobId}-${Date.now()}`);
+
+  const session = useInterviewSession(job, { interviewId: interviewIdRef.current });
 
   if (!job) {
     return (
@@ -176,9 +183,31 @@ export default function InterviewSession() {
         <div className="interview-completion-card">
           <h1 className="completion-title">Interview Ended</h1>
           <p className="completion-subtitle">
-            You exited the interview session for <strong>{job.title}</strong>.
-            Your recorded responses have been preserved.
+            You exited the interview session for <strong>{job.title}</strong> before completing
+            all questions. Responses recorded so far are available in the session transcript below.
+            This session is not persisted — returning to the dashboard will end the session.
           </p>
+          {session.transcript.length > 0 && (
+            <div className="completion-summary">
+              <h3>Recorded Responses ({session.transcript.filter((t) => t.role === 'candidate').length} answers)</h3>
+              <div className="transcript-list">
+                {session.transcript.map((turn) => (
+                  <div
+                    key={turn.id}
+                    className={`transcript-item transcript-item--${turn.role} ${turn.skipped ? 'transcript-item--skipped' : ''}`}
+                  >
+                    <div className="transcript-item__meta">
+                      <strong>{turn.role === 'interviewer' ? 'HirePilot' : 'You'}</strong>
+                      {turn.skipped && <Badge variant="draft" size="sm">Skipped</Badge>}
+                    </div>
+                    <p className="transcript-item__text">
+                      {turn.text || turn.recognizedText || (turn.skipped ? 'Question skipped by candidate.' : '')}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="completion-actions">
             <Button variant="primary" onClick={() => navigate('/')}>
               Return to Dashboard
@@ -188,6 +217,7 @@ export default function InterviewSession() {
       </div>
     );
   }
+
 
   // 4. Live Interview Flow (SPEAKING_QUESTION, LISTENING, PROCESSING_RESPONSE, PAUSED)
   const isSpeaking = session.state === 'SPEAKING_QUESTION' || session.state === 'FOLLOW_UP';

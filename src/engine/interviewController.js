@@ -374,7 +374,30 @@ export class InterviewController {
   }
 
   _finishInterview() {
-    if (this.stateMachine.getState() === InterviewState.COMPLETED) return;
+    const currentState = this.stateMachine.getState();
+    // Guard: already in a terminal state — nothing to do.
+    if (
+      currentState === InterviewState.COMPLETED ||
+      currentState === InterviewState.ABORTED
+    ) {
+      return;
+    }
+
+    // If called from SPEAKING_QUESTION (e.g. empty question list at session start),
+    // the state machine has no direct FINISH transition from SPEAKING_QUESTION.
+    // Transition through QUESTION_SPOKEN -> LISTENING -> PROCESSING_RESPONSE first.
+    if (currentState === InterviewState.SPEAKING_QUESTION) {
+      this._stopAllAudio();
+      this.stateMachine.transition(InterviewEvent.QUESTION_SPOKEN);
+      this.stateMachine.transition(InterviewEvent.RESPONSE_RECEIVED);
+    } else if (currentState === InterviewState.LISTENING) {
+      this.stateMachine.transition(InterviewEvent.RESPONSE_RECEIVED);
+    } else if (currentState === InterviewState.FOLLOW_UP) {
+      this._stopAllAudio();
+      this.stateMachine.transition(InterviewEvent.FOLLOW_UP_SPOKEN);
+      this.stateMachine.transition(InterviewEvent.RESPONSE_RECEIVED);
+    }
+    // State should now be PROCESSING_RESPONSE, which has the FINISH transition.
 
     this.stateMachine.transition(InterviewEvent.FINISH);
     this.eventLog.logEvent(EventType.INTERVIEW_COMPLETED, {
@@ -386,6 +409,7 @@ export class InterviewController {
     this.isAdvancing = false;
     this._stopAllAudio();
   }
+
 
   /**
    * Re-speak the current question.

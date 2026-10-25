@@ -457,4 +457,68 @@ describe('InterviewController', () => {
     // Question should not have advanced because isAdvancing was true
     expect(controller.getCurrentQuestion().id).toBe('q1');
   });
+
+  // ---- Regression tests for defects fixed in the verification phase ----
+
+  it('REGRESSION: startInterview with zero questions reaches COMPLETED without throwing', () => {
+    // Defect: _finishInterview was called from SPEAKING_QUESTION state (no FINISH transition),
+    // causing an unhandled 'Invalid state transition' exception.
+    const emptyJob = { id: 'empty-job', title: 'Empty Role', questions: [] };
+
+    const controller = new InterviewController({
+      job: emptyJob,
+      speechRecognizer: mockRecognizer,
+      speechSynthesizer: mockSynthesizer,
+      capabilities,
+    });
+
+    controller.grantConsent();
+    // Should NOT throw even though there are no questions
+    expect(() => controller.startInterview()).not.toThrow();
+    expect(controller.getState()).toBe(InterviewState.COMPLETED);
+
+    const completedEvent = controller.getEvents().find((e) => e.type === EventType.INTERVIEW_COMPLETED);
+    expect(completedEvent).toBeDefined();
+  });
+
+  it('REGRESSION: _finishInterview is a no-op when session is already ABORTED', () => {
+    // Defect: previous guard only checked for COMPLETED, not ABORTED.
+    // Calling _finishInterview after endEarly could attempt an invalid FINISH transition.
+    const controller = new InterviewController({
+      job: sampleJob,
+      speechRecognizer: mockRecognizer,
+      speechSynthesizer: mockSynthesizer,
+      capabilities,
+    });
+
+    controller.grantConsent();
+    controller.startInterview();
+    controller.endEarly();
+    expect(controller.getState()).toBe(InterviewState.ABORTED);
+
+    // Should be safe to call _finishInterview again — must not throw
+    expect(() => controller._finishInterview()).not.toThrow();
+    // State must remain ABORTED, not change to COMPLETED
+    expect(controller.getState()).toBe(InterviewState.ABORTED);
+  });
+
+  it('REGRESSION: _finishInterview called from LISTENING state reaches COMPLETED without throwing', () => {
+    // Additional coverage: _finishInterview must handle LISTENING state (e.g. direct call
+    // from a future timeout or error path while in LISTENING state).
+    const controller = new InterviewController({
+      job: sampleJob,
+      speechRecognizer: mockRecognizer,
+      speechSynthesizer: mockSynthesizer,
+      capabilities,
+    });
+
+    controller.grantConsent();
+    controller.startInterview();
+    mockSynthesizer._lastCallbacks.onEnd(); // → LISTENING
+
+    expect(controller.getState()).toBe(InterviewState.LISTENING);
+    expect(() => controller._finishInterview()).not.toThrow();
+    expect(controller.getState()).toBe(InterviewState.COMPLETED);
+  });
 });
+
