@@ -283,6 +283,22 @@ export default function InterviewSession() {
         </div>
       </header>
 
+      {/* Visual Question Progress Bar */}
+      <div
+        className="live-progress-bar"
+        role="progressbar"
+        aria-valuenow={session.progress.current}
+        aria-valuemin="1"
+        aria-valuemax={session.progress.total}
+      >
+        <div
+          className="live-progress-bar__fill"
+          style={{
+            width: `${session.progress.total > 0 ? (session.progress.current / session.progress.total) * 100 : 0}%`,
+          }}
+        />
+      </div>
+
       {/* Main active question card */}
       <main className="live-main">
         {session.speechError && (
@@ -316,6 +332,13 @@ export default function InterviewSession() {
               >
                 Interrupt & Speak
               </Button>
+            </div>
+          )}
+
+          {isListening && (
+            <div className="listening-indicator" role="status">
+              <span className="listening-pulse" />
+              <span>Microphone Active — Listening for your response (speak clearly or switch to text below)</span>
             </div>
           )}
 

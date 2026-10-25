@@ -160,4 +160,125 @@ describe('BrowserSpeechSynthesizer', () => {
     synthesizer.destroy();
     expect(synthesizer.synth).toBeNull();
   });
+
+  describe('voice selection and asynchronous loading', () => {
+    it('returns null when no voices are available', () => {
+      const synth = new MockSpeechSynthesis();
+      synth.getVoices = () => [];
+      const synthesizer = new BrowserSpeechSynthesizer({
+        speechSynthesis: synth,
+        UtteranceConstructor: MockSpeechSynthesisUtterance,
+      });
+
+      expect(synthesizer.selectBestVoice('en-US')).toBeNull();
+    });
+
+    it('prefers natural/enhanced human voices over robotic legacy novelty voices', () => {
+      const voices = [
+        { name: 'Fred', lang: 'en-US', default: true },
+        { name: 'Albert', lang: 'en-US', default: false },
+        { name: 'Samantha (Enhanced)', lang: 'en-US', default: false },
+        { name: 'Google US English', lang: 'en-US', default: false },
+      ];
+      const synth = new MockSpeechSynthesis();
+      synth.getVoices = () => voices;
+      const synthesizer = new BrowserSpeechSynthesizer({
+        speechSynthesis: synth,
+        UtteranceConstructor: MockSpeechSynthesisUtterance,
+      });
+
+      const selected = synthesizer.selectBestVoice('en-US');
+      expect(selected).toBeDefined();
+      // Samantha (Enhanced) or Google US English must beat Fred/Albert despite Fred having default: true
+      expect(['Samantha (Enhanced)', 'Google US English']).toContain(selected.name);
+    });
+
+    it('prefers language exact match and ignores incompatible languages', () => {
+      const voices = [
+        { name: 'Amelie', lang: 'fr-FR', default: true },
+        { name: 'Anna', lang: 'de-DE', default: false },
+        { name: 'Daniel', lang: 'en-GB', default: false },
+      ];
+      const synth = new MockSpeechSynthesis();
+      synth.getVoices = () => voices;
+      const synthesizer = new BrowserSpeechSynthesizer({
+        speechSynthesis: synth,
+        UtteranceConstructor: MockSpeechSynthesisUtterance,
+      });
+
+      const selected = synthesizer.selectBestVoice('en-US');
+      expect(selected.name).toBe('Daniel');
+    });
+
+    it('subscribes to voiceschanged event and updates cached voices', () => {
+      const listeners = {};
+      const synth = new MockSpeechSynthesis();
+      synth.addEventListener = (event, handler) => {
+        listeners[event] = handler;
+      };
+      synth.getVoices = () => [];
+
+      const synthesizer = new BrowserSpeechSynthesizer({
+        speechSynthesis: synth,
+        UtteranceConstructor: MockSpeechSynthesisUtterance,
+      });
+
+      expect(synthesizer.getAvailableVoices().length).toBe(0);
+
+      // Simulate voices asynchronously loaded by browser
+      synth.getVoices = () => [{ name: 'Samantha', lang: 'en-US' }];
+      if (listeners['voiceschanged']) {
+        listeners['voiceschanged']();
+      }
+
+      expect(synthesizer.getAvailableVoices().length).toBe(1);
+      expect(synthesizer.selectBestVoice('en-US').name).toBe('Samantha');
+    });
+
+    it('assigns selected natural voice and moderate default rate (0.92) to utterance', () => {
+      const synth = new MockSpeechSynthesis();
+      synth.getVoices = () => [
+        { name: 'Google US English', lang: 'en-US', default: true },
+      ];
+      const synthesizer = new BrowserSpeechSynthesizer({
+        speechSynthesis: synth,
+        UtteranceConstructor: MockSpeechSynthesisUtterance,
+      });
+
+      synthesizer.speak('Interview question text');
+      expect(synth.spokenUtterances.length).toBe(1);
+      const utt = synth.spokenUtterances[0];
+      expect(utt.voice.name).toBe('Google US English');
+      expect(utt.rate).toBe(0.92);
+      expect(utt.pitch).toBe(1.0);
+    });
+
+    it('ignores stale callbacks from superseded utterances via monotonic sequence ID', () => {
+      const synth = new MockSpeechSynthesis();
+      synth.speak = vi.fn(); // do not invoke onstart immediately
+      const synthesizer = new BrowserSpeechSynthesizer({
+        speechSynthesis: synth,
+        UtteranceConstructor: MockSpeechSynthesisUtterance,
+      });
+
+      const onEnd1 = vi.fn();
+      const onEnd2 = vi.fn();
+
+      synthesizer.speak('First question', { onEnd: onEnd1 });
+      const utt1 = synthesizer.currentUtterance;
+      const oldOnEnd = utt1.onend;
+
+      // Start second utterance before first finishes
+      synthesizer.speak('Second question', { onEnd: onEnd2 });
+      const utt2 = synthesizer.currentUtterance;
+
+      // Delayed callback from first utterance must be completely ignored
+      if (oldOnEnd) oldOnEnd();
+      expect(onEnd1).not.toHaveBeenCalled();
+
+      // Callback from current active utterance should be processed
+      utt2.onend();
+      expect(onEnd2).toHaveBeenCalledTimes(1);
+    });
+  });
 });

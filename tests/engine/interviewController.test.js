@@ -520,5 +520,82 @@ describe('InterviewController', () => {
     expect(() => controller._finishInterview()).not.toThrow();
     expect(controller.getState()).toBe(InterviewState.COMPLETED);
   });
+
+  it('REGRESSION: utterance cancellation does NOT advance question or trigger premature listening transition', () => {
+    const controller = new InterviewController({
+      job: sampleJob,
+      speechRecognizer: mockRecognizer,
+      speechSynthesizer: mockSynthesizer,
+      capabilities,
+    });
+
+    controller.grantConsent();
+    controller.startInterview();
+    expect(controller.getState()).toBe(InterviewState.SPEAKING_QUESTION);
+
+    // Pause interview — this calls synthesizer.stop() which triggers utterance.onerror with isCanceled: true
+    controller.pause();
+    expect(controller.getState()).toBe(InterviewState.PAUSED);
+
+    // Simulate the browser asynchronous error event with isCanceled: true
+    mockSynthesizer._lastCallbacks.onError({
+      error: 'canceled',
+      message: 'Speech was canceled.',
+      isCanceled: true,
+    });
+
+    // The state must REMAIN PAUSED and not advance to LISTENING or next question!
+    expect(controller.getState()).toBe(InterviewState.PAUSED);
+    expect(controller.getCurrentQuestion().id).toBe('q1');
+  });
+
+  it('REGRESSION: candidate interruption activates speech recognition when in voice mode', () => {
+    const controller = new InterviewController({
+      job: sampleJob,
+      speechRecognizer: mockRecognizer,
+      speechSynthesizer: mockSynthesizer,
+      capabilities,
+    });
+
+    controller.grantConsent();
+    controller.startInterview();
+    expect(controller.getState()).toBe(InterviewState.SPEAKING_QUESTION);
+    expect(mockRecognizer.start).not.toHaveBeenCalled();
+
+    // Interrupt question
+    controller.interruptQuestion();
+    expect(controller.getState()).toBe(InterviewState.LISTENING);
+    // Recognizer must now be started so candidate can immediately speak
+    expect(mockRecognizer.start).toHaveBeenCalled();
+  });
+
+  it('REGRESSION: genuine synthesis errors recover gracefully into LISTENING mode with question visible', () => {
+    let capturedError = null;
+    const controller = new InterviewController({
+      job: sampleJob,
+      speechRecognizer: mockRecognizer,
+      speechSynthesizer: mockSynthesizer,
+      capabilities,
+      onError: (err) => {
+        capturedError = err;
+      },
+    });
+
+    controller.grantConsent();
+    controller.startInterview();
+    expect(controller.getState()).toBe(InterviewState.SPEAKING_QUESTION);
+
+    // Simulate unexpected audio hardware synthesis failure (not a cancellation)
+    mockSynthesizer._lastCallbacks.onError({
+      error: 'audio-hardware',
+      message: 'Audio device unavailable.',
+      isCanceled: false,
+    });
+
+    // Recovers gracefully into LISTENING so candidate can read question and answer
+    expect(controller.getState()).toBe(InterviewState.LISTENING);
+    expect(controller.getCurrentQuestion().id).toBe('q1');
+    expect(capturedError).toContain('Audio playback was unavailable');
+  });
 });
 

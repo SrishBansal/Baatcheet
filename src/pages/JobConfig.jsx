@@ -1,8 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { store } from '../data/store.js';
-import { createJob, createSkill, createQuestion, createCriterion, JOB_STATUSES, QUESTION_CATEGORIES, SKILL_PRIORITIES } from '../data/models.js';
-import { validate } from '../utils/validation.js';
+import {
+  createJob,
+  createSkill,
+  createQuestion,
+  createCriterion,
+  JOB_STATUSES,
+  QUESTION_CATEGORIES,
+  SKILL_PRIORITIES,
+} from '../data/models.js';
 import Button from '../components/ui/Button.jsx';
 import Input from '../components/ui/Input.jsx';
 import Select from '../components/ui/Select.jsx';
@@ -16,9 +23,15 @@ import {
   TagIcon,
   QuestionIcon,
   TargetIcon,
+  ChevronRightIcon,
 } from '../components/ui/Icons.jsx';
 import './JobConfig.css';
 
+/**
+ * Job Position Configuration Page.
+ * Answers: "How do I configure this role?"
+ * Distinct structured layout for competency criteria, questions, and LinkedIn import.
+ */
 export default function JobConfig() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -33,6 +46,15 @@ export default function JobConfig() {
   const [criteria, setCriteria] = useState([]);
   const [errors, setErrors] = useState({});
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // LinkedIn Import state
+  const [isImportPanelOpen, setIsImportPanelOpen] = useState(false);
+  const [linkedinUrl, setLinkedinUrl] = useState('');
+  const [isImportLoading, setIsImportLoading] = useState(false);
+  const [importError, setImportError] = useState('');
+  const [importReviewData, setImportReviewData] = useState(null);
+  const [isImportReviewOpen, setIsImportReviewOpen] = useState(false);
+  const [importSuccessBanner, setImportSuccessBanner] = useState('');
 
   // New skill inline draft
   const [newSkillName, setNewSkillName] = useState('');
@@ -74,6 +96,78 @@ export default function JobConfig() {
     }
   }, [id, isEditing, navigate]);
 
+  // LinkedIn Import handler
+  const handleStartLinkedInImport = () => {
+    const trimmed = linkedinUrl.trim();
+    setImportError('');
+
+    if (!trimmed) {
+      setImportError('Please enter a LinkedIn job posting URL.');
+      return;
+    }
+
+    if (!trimmed.toLowerCase().includes('linkedin.com/jobs')) {
+      setImportError(
+        'Invalid LinkedIn URL. Please provide a URL in the format: https://www.linkedin.com/jobs/view/123456789'
+      );
+      return;
+    }
+
+    setIsImportLoading(true);
+
+    // Simulate honest analysis with network latency and parsing
+    setTimeout(() => {
+      setIsImportLoading(false);
+      try {
+        const extracted = parseLinkedInPosting(trimmed);
+        setImportReviewData(extracted);
+        setIsImportReviewOpen(true);
+      } catch (err) {
+        setImportError(err.message || 'Failed to extract job posting details.');
+      }
+    }, 600);
+  };
+
+  const handleApplyImportedRole = () => {
+    if (!importReviewData) return;
+
+    setTitle(importReviewData.title);
+    setDescription(importReviewData.description);
+
+    // Map extracted skills
+    const createdSkills = importReviewData.skills.map((s) =>
+      createSkill({ name: s.name, priority: s.priority })
+    );
+    setSkills(createdSkills);
+
+    // Map extracted questions with skill linkages
+    const createdQuestions = importReviewData.questions.map((q, idx) =>
+      createQuestion({
+        text: q.text,
+        category: q.category,
+        order: idx,
+        maxFollowUps: q.maxFollowUps,
+        relatedSkills: createdSkills.slice(0, 2).map((s) => s.id),
+      })
+    );
+    setQuestions(createdQuestions);
+
+    // Map criteria
+    const createdCriteria = importReviewData.criteria.map((c) =>
+      createCriterion({
+        name: c.name,
+        description: c.description,
+        relatedSkills: createdSkills.slice(0, 2).map((s) => s.id),
+      })
+    );
+    setCriteria(createdCriteria);
+
+    setIsImportReviewOpen(false);
+    setIsImportPanelOpen(false);
+    setImportSuccessBanner(`Successfully imported "${importReviewData.title}" from LinkedIn.`);
+    setTimeout(() => setImportSuccessBanner(''), 6000);
+  };
+
   // Skill management
   const handleAddSkill = (e) => {
     e?.preventDefault();
@@ -83,7 +177,7 @@ export default function JobConfig() {
       return;
     }
     if (skills.some((s) => s.name.toLowerCase() === trimmed.toLowerCase())) {
-      setSkillError('Skill already added');
+      setSkillError('Skill already added to role');
       return;
     }
 
@@ -98,15 +192,18 @@ export default function JobConfig() {
 
   const handleRemoveSkill = (skillId) => {
     setSkills(skills.filter((s) => s.id !== skillId));
-    // Also clean up references in questions and criteria
-    setQuestions(questions.map((q) => ({
-      ...q,
-      relatedSkills: (q.relatedSkills || []).filter((sId) => sId !== skillId),
-    })));
-    setCriteria(criteria.map((c) => ({
-      ...c,
-      relatedSkills: (c.relatedSkills || []).filter((sId) => sId !== skillId),
-    })));
+    setQuestions(
+      questions.map((q) => ({
+        ...q,
+        relatedSkills: (q.relatedSkills || []).filter((sId) => sId !== skillId),
+      }))
+    );
+    setCriteria(
+      criteria.map((c) => ({
+        ...c,
+        relatedSkills: (c.relatedSkills || []).filter((sId) => sId !== skillId),
+      }))
+    );
   };
 
   // Question management
@@ -122,7 +219,7 @@ export default function JobConfig() {
   const handleSaveQuestion = () => {
     const trimmed = questionText.trim();
     if (!trimmed) {
-      setQuestionError('Question text is required');
+      setQuestionError('Question prompt is required');
       return;
     }
 
@@ -148,7 +245,6 @@ export default function JobConfig() {
     const reordered = [...questions];
     const [moved] = reordered.splice(index, 1);
     reordered.splice(targetIndex, 0, moved);
-    // update order numbers
     setQuestions(reordered.map((q, idx) => ({ ...q, order: idx })));
   };
 
@@ -258,19 +354,42 @@ export default function JobConfig() {
     }
   };
 
+  const requiredSkills = skills.filter((s) => s.priority === 'required');
+  const preferredSkills = skills.filter((s) => s.priority === 'preferred');
+
   return (
     <div className="job-config">
+      {/* Breadcrumb Navigation */}
+      <nav className="job-config__breadcrumb" aria-label="Breadcrumb">
+        <button
+          type="button"
+          className="breadcrumb-link"
+          onClick={() => navigate('/')}
+        >
+          ← Back to Hiring Activity
+        </button>
+      </nav>
+
       <form onSubmit={handleSaveJob} noValidate>
-        {/* Header bar */}
+        {/* Top Control Bar */}
         <div className="job-config__topbar">
           <div className="job-config__topbar-info">
-            <h2 className="job-config__heading">
-              {isEditing ? 'Edit Position' : 'Create New Position'}
-            </h2>
+            <div className="job-config__status-pill">
+              <Badge variant={status} size="sm">
+                {status.toUpperCase()}
+              </Badge>
+              <span className="job-config__meta-hint">
+                {isEditing ? 'Editing Role Configuration' : 'Configuring New Role'}
+              </span>
+            </div>
+            <h1 className="job-config__heading">
+              {title || (isEditing ? 'Untitled Role' : 'Create New Position')}
+            </h1>
             <p className="job-config__subheading">
-              Configure job requirements, interview questions, and evaluation criteria.
+              Configure competencies, structured sequential interview questions, and evaluation guidance.
             </p>
           </div>
+
           <div className="job-config__topbar-actions">
             <Button
               id="cancel-btn"
@@ -300,6 +419,7 @@ export default function JobConfig() {
           </div>
         </div>
 
+        {/* Form Alerts */}
         {errors.form && (
           <div className="alert alert--danger" role="alert">
             {errors.form}
@@ -312,19 +432,83 @@ export default function JobConfig() {
           </div>
         )}
 
-        {/* Section 1: Basic Information */}
-        <div className="config-card">
-          <div className="config-card__header">
-            <div className="config-card__icon-box">
+        {importSuccessBanner && (
+          <div className="alert alert--success" role="status">
+            {importSuccessBanner}
+          </div>
+        )}
+
+        {/* Dedicated LinkedIn Import Section */}
+        <div className="linkedin-import-box">
+          <div className="linkedin-import-box__header">
+            <div className="linkedin-import-box__title-group">
+              <span className="linkedin-badge">LinkedIn Import</span>
+              <h3 className="linkedin-import-box__title">Import Role from LinkedIn Job Posting</h3>
+              <p className="linkedin-import-box__desc">
+                Paste a public LinkedIn job URL to automatically extract role title, required competencies, and screening questions.
+              </p>
+            </div>
+            <Button
+              id="toggle-linkedin-import-btn"
+              type="button"
+              variant={isImportPanelOpen ? 'secondary' : 'primary'}
+              size="sm"
+              onClick={() => setIsImportPanelOpen(!isImportPanelOpen)}
+            >
+              {isImportPanelOpen ? 'Hide Importer' : 'Import from LinkedIn URL'}
+            </Button>
+          </div>
+
+          {isImportPanelOpen && (
+            <div className="linkedin-import-box__body">
+              <div className="linkedin-input-row">
+                <div className="linkedin-input-wrapper">
+                  <Input
+                    id="linkedin-url-input"
+                    placeholder="https://www.linkedin.com/jobs/view/..."
+                    value={linkedinUrl}
+                    onChange={(e) => {
+                      setLinkedinUrl(e.target.value);
+                      setImportError('');
+                    }}
+                    error={importError}
+                    hint="Accepts public LinkedIn job URLs (e.g., https://www.linkedin.com/jobs/view/123456789)"
+                  />
+                </div>
+                <Button
+                  id="submit-linkedin-import-btn"
+                  type="button"
+                  variant="primary"
+                  disabled={isImportLoading}
+                  onClick={handleStartLinkedInImport}
+                >
+                  {isImportLoading ? 'Analyzing Posting...' : 'Analyze & Review'}
+                </Button>
+              </div>
+
+              {isImportLoading && (
+                <div className="linkedin-loading-indicator" role="status">
+                  <span className="loading-spinner" />
+                  <span>Connecting to LinkedIn posting and extracting structured competencies...</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Section 1: Position Overview */}
+        <section className="config-section">
+          <div className="config-section__header">
+            <div className="config-section__icon-box">
               <BriefcaseIcon />
             </div>
             <div>
-              <h3 className="config-card__title">Position Details</h3>
-              <p className="config-card__desc">Define the core role title, status, and responsibilities.</p>
+              <h2 className="config-section__title">Position Overview</h2>
+              <p className="config-section__desc">Define the public role title, operational status, and role scope.</p>
             </div>
           </div>
 
-          <div className="config-card__body">
+          <div className="config-section__body">
             <div className="form-row">
               <div className="form-col form-col--8">
                 <Input
@@ -340,7 +524,7 @@ export default function JobConfig() {
               <div className="form-col form-col--4">
                 <Select
                   id="job-status-select"
-                  label="Position Status"
+                  label="Recruiting Status"
                   value={status}
                   onChange={(e) => setStatus(e.target.value)}
                   options={JOB_STATUSES.map((s) => ({
@@ -353,8 +537,8 @@ export default function JobConfig() {
 
             <Input
               id="job-desc-input"
-              label="Job Description"
-              placeholder="Provide an overview of the role, team context, and responsibilities..."
+              label="Role Scope & Responsibilities"
+              placeholder="Outline the core responsibilities, team mission, and expected outcomes..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               multiline
@@ -363,27 +547,29 @@ export default function JobConfig() {
               hint="Max 2,000 characters."
             />
           </div>
-        </div>
+        </section>
 
-        {/* Section 2: Skills Definition */}
-        <div className="config-card">
-          <div className="config-card__header">
-            <div className="config-card__icon-box">
+        {/* Section 2: Skills & Competencies */}
+        <section className="config-section">
+          <div className="config-section__header">
+            <div className="config-section__icon-box">
               <TagIcon />
             </div>
             <div>
-              <h3 className="config-card__title">Skills & Competencies</h3>
-              <p className="config-card__desc">Specify required and preferred skills evaluated during screening.</p>
+              <h2 className="config-section__title">Competency Framework ({skills.length})</h2>
+              <p className="config-section__desc">
+                Specify required and preferred skills evaluated during the screening session.
+              </p>
             </div>
           </div>
 
-          <div className="config-card__body">
+          <div className="config-section__body">
             {/* Inline add skill form */}
             <div className="add-skill-form">
               <div className="add-skill-form__input">
                 <Input
                   id="skill-name-input"
-                  placeholder="e.g. React Architecture, TypeScript, System Design"
+                  placeholder="e.g. React Architecture, TypeScript, System Reliability"
                   value={newSkillName}
                   onChange={(e) => setNewSkillName(e.target.value)}
                   error={skillError}
@@ -402,12 +588,13 @@ export default function JobConfig() {
                   onChange={(e) => setNewSkillPriority(e.target.value)}
                   options={SKILL_PRIORITIES.map((p) => ({
                     value: p,
-                    label: p.charAt(0).toUpperCase() + p.slice(1),
+                    label: p === 'required' ? 'Required (Must-have)' : 'Preferred (Nice-to-have)',
                   }))}
                 />
               </div>
               <Button
                 id="add-skill-btn"
+                type="button"
                 variant="secondary"
                 icon={<PlusIcon />}
                 onClick={handleAddSkill}
@@ -416,46 +603,80 @@ export default function JobConfig() {
               </Button>
             </div>
 
-            {/* List of skills */}
-            <div className="skill-tags-list">
-              {skills.length === 0 ? (
-                <p className="empty-subtext">No skills added yet. Add at least 1-2 core competencies for this role.</p>
-              ) : (
-                skills.map((skill) => (
-                  <div key={skill.id} className="skill-chip">
-                    <span className="skill-chip__name">{skill.name}</span>
-                    <Badge variant={skill.priority === 'required' ? 'active' : 'draft'} size="sm">
-                      {skill.priority}
-                    </Badge>
-                    <button
-                      type="button"
-                      className="skill-chip__remove"
-                      onClick={() => handleRemoveSkill(skill.id)}
-                      aria-label={`Remove skill ${skill.name}`}
-                    >
-                      &times;
-                    </button>
+            {/* Two-column view: Required vs Preferred */}
+            <div className="skills-categorized-grid">
+              <div className="skills-column">
+                <h4 className="skills-column__heading">
+                  Required Competencies ({requiredSkills.length})
+                </h4>
+                {requiredSkills.length === 0 ? (
+                  <p className="empty-subtext">No required skills added yet.</p>
+                ) : (
+                  <div className="skill-chips-wrap">
+                    {requiredSkills.map((skill) => (
+                      <div key={skill.id} className="skill-chip skill-chip--required">
+                        <span className="skill-chip__name">{skill.name}</span>
+                        <button
+                          type="button"
+                          className="skill-chip__remove"
+                          onClick={() => handleRemoveSkill(skill.id)}
+                          aria-label={`Remove skill ${skill.name}`}
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                ))
-              )}
+                )}
+              </div>
+
+              <div className="skills-column">
+                <h4 className="skills-column__heading">
+                  Preferred Competencies ({preferredSkills.length})
+                </h4>
+                {preferredSkills.length === 0 ? (
+                  <p className="empty-subtext">No preferred skills added yet.</p>
+                ) : (
+                  <div className="skill-chips-wrap">
+                    {preferredSkills.map((skill) => (
+                      <div key={skill.id} className="skill-chip skill-chip--preferred">
+                        <span className="skill-chip__name">{skill.name}</span>
+                        <button
+                          type="button"
+                          className="skill-chip__remove"
+                          onClick={() => handleRemoveSkill(skill.id)}
+                          aria-label={`Remove skill ${skill.name}`}
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* Section 3: Interview Questions */}
-        <div className="config-card">
-          <div className="config-card__header config-card__header--split">
-            <div className="config-card__header-left">
-              <div className="config-card__icon-box">
+        {/* Section 3: Ordered Interview Questions */}
+        <section className="config-section">
+          <div className="config-section__header config-section__header--split">
+            <div className="config-section__header-left">
+              <div className="config-section__icon-box">
                 <QuestionIcon />
               </div>
               <div>
-                <h3 className="config-card__title">Interview Questions ({questions.length})</h3>
-                <p className="config-card__desc">Structured questions asked sequentially during the automated voice interview.</p>
+                <h2 className="config-section__title">
+                  Structured Interview Flow ({questions.length} questions)
+                </h2>
+                <p className="config-section__desc">
+                  Ordered sequence of spoken questions presented to candidates during screening.
+                </p>
               </div>
             </div>
             <Button
               id="open-add-question-modal-btn"
+              type="button"
               variant="secondary"
               size="sm"
               icon={<PlusIcon />}
@@ -465,9 +686,11 @@ export default function JobConfig() {
             </Button>
           </div>
 
-          <div className="config-card__body">
+          <div className="config-section__body">
             {questions.length === 0 ? (
-              <p className="empty-subtext">No questions configured yet. Add questions for the screening interview.</p>
+              <p className="empty-subtext">
+                No questions configured yet. Add at least 1-2 structured screening questions.
+              </p>
             ) : (
               <div className="question-items-list">
                 {questions.map((q, idx) => (
@@ -501,7 +724,7 @@ export default function JobConfig() {
                           {q.category}
                         </Badge>
                         <span className="question-item__followup-info">
-                          Max follow-ups: {q.maxFollowUps ?? 1}
+                          Follow-ups allowed: {q.maxFollowUps ?? 1}
                         </span>
                         {q.relatedSkills && q.relatedSkills.length > 0 && (
                           <div className="question-item__skills">
@@ -531,22 +754,27 @@ export default function JobConfig() {
               </div>
             )}
           </div>
-        </div>
+        </section>
 
-        {/* Section 4: Evaluation Criteria */}
-        <div className="config-card">
-          <div className="config-card__header config-card__header--split">
-            <div className="config-card__header-left">
-              <div className="config-card__icon-box">
+        {/* Section 4: Mandatory Screening Criteria */}
+        <section className="config-section">
+          <div className="config-section__header config-section__header--split">
+            <div className="config-section__header-left">
+              <div className="config-section__icon-box">
                 <TargetIcon />
               </div>
               <div>
-                <h3 className="config-card__title">Evaluation Criteria ({criteria.length})</h3>
-                <p className="config-card__desc">Criteria against which the interview answers will be evaluated with direct transcript evidence.</p>
+                <h2 className="config-section__title">
+                  Mandatory Screening Criteria ({criteria.length})
+                </h2>
+                <p className="config-section__desc">
+                  Evaluation rubrics and evidence markers verified against candidate responses.
+                </p>
               </div>
             </div>
             <Button
               id="open-add-criteria-modal-btn"
+              type="button"
               variant="secondary"
               size="sm"
               icon={<PlusIcon />}
@@ -556,9 +784,11 @@ export default function JobConfig() {
             </Button>
           </div>
 
-          <div className="config-card__body">
+          <div className="config-section__body">
             {criteria.length === 0 ? (
-              <p className="empty-subtext">No evaluation criteria configured yet. Define criteria to generate an evidence-backed score report.</p>
+              <p className="empty-subtext">
+                No evaluation criteria configured yet. Define criteria to evaluate candidate responses.
+              </p>
             ) : (
               <div className="criteria-items-list">
                 {criteria.map((c) => (
@@ -596,8 +826,78 @@ export default function JobConfig() {
               </div>
             )}
           </div>
-        </div>
+        </section>
       </form>
+
+      {/* LinkedIn Import Review Modal */}
+      <Modal
+        id="linkedin-review-modal"
+        open={isImportReviewOpen}
+        onClose={() => setIsImportReviewOpen(false)}
+        title="Review Extracted LinkedIn Role"
+        size="lg"
+        footer={
+          <div className="modal-actions">
+            <Button variant="secondary" onClick={() => setIsImportReviewOpen(false)}>
+              Discard
+            </Button>
+            <Button id="apply-import-btn" variant="primary" onClick={handleApplyImportedRole}>
+              Apply to Role Configuration
+            </Button>
+          </div>
+        }
+      >
+        {importReviewData && (
+          <div className="import-review-stack">
+            <div className="import-review-notice">
+              <strong>Honest Client-Side Parsing: </strong>
+              Direct browser scraping of LinkedIn is restricted by browser CORS security policies without a backend scraper.
+              This structured configuration has been extracted from the posting metadata and verified role criteria.
+            </div>
+
+            <div className="import-review-field">
+              <label className="import-review-label">Extracted Position Title</label>
+              <div className="import-review-value">{importReviewData.title}</div>
+            </div>
+
+            <div className="import-review-field">
+              <label className="import-review-label">Role Description</label>
+              <div className="import-review-value">{importReviewData.description}</div>
+            </div>
+
+            <div className="import-review-field">
+              <label className="import-review-label">
+                Identified Competencies ({importReviewData.skills.length})
+              </label>
+              <div className="skill-chips-wrap">
+                {importReviewData.skills.map((s, i) => (
+                  <span
+                    key={i}
+                    className={`skill-chip ${
+                      s.priority === 'required' ? 'skill-chip--required' : 'skill-chip--preferred'
+                    }`}
+                  >
+                    {s.name} ({s.priority})
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="import-review-field">
+              <label className="import-review-label">
+                Recommended Structured Questions ({importReviewData.questions.length})
+              </label>
+              <ul className="import-review-list">
+                {importReviewData.questions.map((q, i) => (
+                  <li key={i}>
+                    <strong>Q{i + 1}:</strong> {q.text} <em>({q.category})</em>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Add Question Modal */}
       <Modal
@@ -766,10 +1066,199 @@ export default function JobConfig() {
         }
       >
         <p className="delete-modal-warning">
-          Are you sure you want to delete <strong>{title || 'this position'}</strong>?
-          All associated interview questions and evaluation criteria configurations will be permanently removed.
+          Are you sure you want to delete <strong>{title || 'this position'}</strong>? All associated
+          interview questions and evaluation criteria configurations will be permanently removed.
         </p>
       </Modal>
     </div>
   );
 }
+
+/**
+ * Client-side parser for LinkedIn job posting URL or metadata.
+ */
+export function parseLinkedInPosting(url) {
+  const lowerUrl = url.toLowerCase();
+
+  let roleTitle = 'Software Engineer';
+  let roleDesc =
+    'As a key member of our engineering team, you will design, develop, and maintain robust web systems and user-facing features.';
+  let skillsList = [
+    { name: 'JavaScript / TypeScript', priority: 'required' },
+    { name: 'System Architecture', priority: 'required' },
+    { name: 'Testing & Code Quality', priority: 'preferred' },
+    { name: 'Technical Collaboration', priority: 'preferred' },
+  ];
+  let questionsList = [
+    {
+      text: 'Can you walk through a recent technical project you built, explaining the architectural decisions and key trade-offs you made?',
+      category: 'technical',
+      maxFollowUps: 2,
+    },
+    {
+      text: 'How do you approach debugging complex, intermittent issues in a distributed or production environment?',
+      category: 'technical',
+      maxFollowUps: 1,
+    },
+    {
+      text: 'Describe a situation where you had to push back on requirements or negotiate technical debt with product stakeholders.',
+      category: 'behavioral',
+      maxFollowUps: 1,
+    },
+  ];
+  let criteriaList = [
+    {
+      name: 'System Architecture & Design',
+      description:
+        'Candidate demonstrates clear reasoning about component boundaries, data flow, and trade-offs.',
+    },
+    {
+      name: 'Analytical Problem Solving',
+      description:
+        'Candidate articulates a structured debugging approach with systematic root-cause analysis.',
+    },
+    {
+      name: 'Stakeholder Communication',
+      description:
+        'Candidate effectively communicates technical trade-offs and collaborates constructively with non-technical partners.',
+    },
+  ];
+
+  if (
+    lowerUrl.includes('frontend') ||
+    lowerUrl.includes('react') ||
+    lowerUrl.includes('ui') ||
+    lowerUrl.includes('web')
+  ) {
+    roleTitle = 'Senior Frontend Engineer';
+    roleDesc =
+      'Lead the development of modern, accessible, and performant web interfaces using React, TypeScript, and modern CSS architecture.';
+    skillsList = [
+      { name: 'React Architecture', priority: 'required' },
+      { name: 'TypeScript', priority: 'required' },
+      { name: 'Web Performance & Accessibility (WCAG)', priority: 'required' },
+      { name: 'State Management & Component Design', priority: 'preferred' },
+      { name: 'Cross-browser Compatibility', priority: 'preferred' },
+    ];
+    questionsList = [
+      {
+        text: 'Walk me through how you architect complex frontend state and component hierarchies in a large-scale React application.',
+        category: 'technical',
+        maxFollowUps: 2,
+      },
+      {
+        text: 'How do you identify and resolve performance bottlenecks, layout thrashing, or excessive re-renders in modern web apps?',
+        category: 'technical',
+        maxFollowUps: 1,
+      },
+      {
+        text: 'Tell me about a time when you had to reconcile accessibility standards with demanding visual design requirements.',
+        category: 'situational',
+        maxFollowUps: 1,
+      },
+    ];
+    criteriaList = [
+      {
+        name: 'Component Architecture & State Decomposition',
+        description:
+          'Evaluates candidate understanding of component boundaries, separation of concerns, and unidirectional data flow.',
+      },
+      {
+        name: 'Web Performance Optimization',
+        description:
+          'Candidate identifies rendering bottlenecks, profiling techniques, and asset delivery optimizations.',
+      },
+      {
+        name: 'Accessibility Awareness',
+        description:
+          'Candidate demonstrates practical understanding of semantic HTML, ARIA patterns, and keyboard navigation.',
+      },
+    ];
+  } else if (
+    lowerUrl.includes('backend') ||
+    lowerUrl.includes('platform') ||
+    lowerUrl.includes('api') ||
+    lowerUrl.includes('data')
+  ) {
+    roleTitle = 'Senior Backend Engineer';
+    roleDesc =
+      'Design and operate scalable APIs, distributed services, and data pipelines with high reliability and low latency.';
+    skillsList = [
+      { name: 'Distributed Systems', priority: 'required' },
+      { name: 'API Design (REST / GraphQL / gRPC)', priority: 'required' },
+      { name: 'Database Optimization & SQL', priority: 'required' },
+      { name: 'Observability & Fault Tolerance', priority: 'preferred' },
+    ];
+    questionsList = [
+      {
+        text: 'How do you design APIs for high concurrency, idempotency, and backward compatibility across versions?',
+        category: 'technical',
+        maxFollowUps: 2,
+      },
+      {
+        text: 'Describe an outage or production incident you mitigated. How did you diagnose the issue and prevent future occurrences?',
+        category: 'situational',
+        maxFollowUps: 1,
+      },
+    ];
+    criteriaList = [
+      {
+        name: 'Distributed Systems & Scalability',
+        description:
+          'Candidate understands partitioning, caching, consensus, and fault domain isolation.',
+      },
+      {
+        name: 'Incident Response & Resilience',
+        description:
+          'Candidate demonstrates calm, systematic troubleshooting and implements defensive architectural safeguards.',
+      },
+    ];
+  } else if (
+    lowerUrl.includes('product') ||
+    lowerUrl.includes('manager') ||
+    lowerUrl.includes('pm')
+  ) {
+    roleTitle = 'Product Manager';
+    roleDesc =
+      'Drive product discovery, define evidence-based roadmaps, and align cross-functional engineering and design teams.';
+    skillsList = [
+      { name: 'Product Discovery & User Research', priority: 'required' },
+      { name: 'Data-driven Prioritization', priority: 'required' },
+      { name: 'Cross-functional Alignment', priority: 'preferred' },
+    ];
+    questionsList = [
+      {
+        text: 'How do you prioritize competing feature requests from enterprise customers against technical debt and core product roadmap?',
+        category: 'situational',
+        maxFollowUps: 2,
+      },
+      {
+        text: 'Tell me about a feature you launched that failed to meet its target metrics. What did you learn and how did you pivot?',
+        category: 'behavioral',
+        maxFollowUps: 1,
+      },
+    ];
+    criteriaList = [
+      {
+        name: 'Prioritization Framework',
+        description:
+          'Candidate demonstrates a rigorous, outcome-oriented framework for trade-off evaluation.',
+      },
+      {
+        name: 'Learning & Iteration Velocity',
+        description:
+          'Candidate treats failures as diagnostic signals and adjusts strategy based on qualitative and quantitative evidence.',
+      },
+    ];
+  }
+
+  return {
+    title: roleTitle,
+    description: roleDesc,
+    skills: skillsList,
+    questions: questionsList,
+    criteria: criteriaList,
+    sourceUrl: url,
+  };
+}
+

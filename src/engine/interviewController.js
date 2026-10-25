@@ -205,8 +205,20 @@ export class InterviewController {
         onEnd: () => {
           this._handleQuestionPlaybackFinished();
         },
-        onError: () => {
-          // Fall back gracefully if synthesis fails or is cancelled
+        onError: (err) => {
+          // Guard: If synthesis was intentionally canceled (e.g. pause, barge-in interruption,
+          // skip, repeat, or stop), NEVER treat cancellation as playback completion.
+          if (err?.isCanceled) {
+            return;
+          }
+
+          // For genuine, unexpected speech synthesis errors (e.g. audio device failure, speech crash):
+          this.speechErrorMessage = 'Audio playback was unavailable. You can read the question text and answer.';
+          if (this.onError) {
+            this.onError(this.speechErrorMessage);
+          }
+
+          // Graceful recovery: allow candidate to read visible question and submit answer
           this._handleQuestionPlaybackFinished();
         },
       });
@@ -257,6 +269,11 @@ export class InterviewController {
       });
       this.stateMachine.transition(InterviewEvent.CANDIDATE_INTERRUPTED);
       this.questionEndTime = Date.now();
+
+      // Begin listening immediately upon candidate barge-in if in voice mode
+      if (this.inputMode === 'voice' && this.recognizer.isSupported()) {
+        this.recognizer.start();
+      }
     }
   }
 

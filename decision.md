@@ -341,8 +341,27 @@
   - Auto-submitting on brief pauses: Rejected because candidate hesitation could lead to premature submission; candidate retains explicit submission control.
 - **Rationale:** Ensures clean decoupling between presentation and interview logic, prevents stale callbacks from corrupting state, respects candidate consent and privacy, and provides a robust fallback across all browsers.
 - **Trade-offs and risks:** Session state is held in client memory during the interview; a browser reload restarts the interview from the introduction screen. Session persistence and crash recovery are deferred to U-005.
-- **Requirements affected:** B.1–B.5, C.1–C.5, D.1–D.3.
-- **Revisit condition:** When implementing server-side session persistence and cross-device interview links in Phase 4.
+### ADR-026: Speech synthesis voice quality, utterance cancellation isolation, and distinct recruiter workflows
+
+- **Status:** Accepted
+- **Date:** 2026-10-25
+- **Context:** During product-quality verification, spoken interview questions sounded robotic/crackly, cancellation callbacks during pause/skip/repeat could cause race conditions with question playback completion, and the recruiter dashboard and job configuration pages lacked distinct operational focus.
+- **Decision:**
+  - **Natural Voice Selection Algorithm:** `BrowserSpeechSynthesizer` actively queries `getVoices()` and subscribes to the browser's asynchronous `voiceschanged` event. It scores voice candidates to prioritize neural/natural/enhanced human voices (e.g., Google US English, Samantha, Ava, Daniel) while penalizing legacy novelty/robotic voices (e.g., Fred, Albert, Zarvox).
+  - **Calibrated Pacing & Pitch:** Set a moderate, articulate speaking rate (0.92) and neutral pitch (1.0) to deliver composed question prompts.
+  - **Monotonic Utterance Tracking:** Assigned a monotonic sequence token (`_currentUtteranceId`) to every speech request. Callbacks from superseded or cancelled utterances are completely discarded, preventing overlapping playback and stale callback corruption.
+  - **Cancellation vs. Error Distinction:** `InterviewController` explicitly inspects `err.isCanceled`. Intentional cancellations (pause, interruption, skip, repeat, end) never trigger question advancement or transitions to `QUESTION_SPOKEN`. Genuine synthesis failures recover gracefully into `LISTENING` mode with a visible prompt and non-blocking notification.
+  - **Immediate Interruption Mic Activation:** Candidate barge-in (`interruptQuestion`) immediately activates the speech recognizer when in voice mode.
+  - **Differentiated Recruiter Architecture:**
+    - Recruiter Dashboard: Operations hub answering "What is happening across my hiring activity?" with real pipeline metrics (total roles, active screening, drafts, total configured questions), status filtering, and directory table.
+    - Role Configuration Page: Focused role architect answering "How do I configure this role?" with competency framework (Required vs Preferred skills), sequential question ordering with reordering controls, mandatory criteria with evaluation guidance, and a dedicated LinkedIn job URL importer featuring honest loading, error, and review states.
+- **Alternatives considered:**
+  - Adding a paid cloud TTS provider (ElevenLabs/OpenAI Audio): Prohibited by zero-budget constraint (ADR-015) without prior approval.
+  - Hardcoding a single voice name: Rejected because installed voice names vary drastically across macOS, Windows, Linux, and mobile browsers.
+- **Rationale:** Resolves audio usability defects purely using free Web Speech APIs, eliminates race conditions between cancellation and question transitions, and provides a distinct, credible B2B recruiting product experience.
+- **Trade-offs and risks:** Voice quality remains bounded by browser/OS-installed voices; on systems with only legacy synthesizer voices, quality will be lower than cloud neural voices, but visual text fallback ensures 100% interview accessibility.
+- **Requirements affected:** C.2, C.4, A.1–A.4, Objective 1 & 2.
+- **Revisit condition:** When server-side audio infrastructure is introduced in multi-user phases.
 
 ---
 

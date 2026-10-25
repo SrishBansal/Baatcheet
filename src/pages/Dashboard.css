@@ -1,112 +1,225 @@
-/* ---- Dashboard Page Styles ---- */
+/* ================================================================
+   Recruiter Dashboard — Hiring Activity & Position Directory
+   ================================================================ */
 
 .dashboard {
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
-/* ---- Section ---- */
-.dashboard__section {
+/* Page Header */
+.dashboard__header {
   display: flex;
-  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: var(--space-4);
+  flex-wrap: wrap;
 }
 
-.dashboard__section-header {
+.dashboard__title {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  color: var(--color-text-primary);
+  letter-spacing: -0.02em;
+}
+
+.dashboard__subtitle {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  margin-top: var(--space-1);
+}
+
+.dashboard__header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Filter Tabs Toolbar */
+.dashboard__section-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-2);
+  margin-bottom: var(--space-4);
 }
 
-.dashboard__section-title {
-  font-size: var(--text-lg);
+.dashboard__filter-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.filter-tab {
+  background: none;
+  border: none;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.filter-tab:hover {
+  color: var(--color-text-primary);
+  background-color: var(--color-gray-100);
+}
+
+.filter-tab--active {
+  color: var(--color-primary-700);
+  background-color: var(--color-primary-50);
   font-weight: var(--font-semibold);
 }
 
-/* ---- Job list ---- */
-.job-list {
+/* Positions Directory */
+.positions-directory {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
-/* ---- Job card ---- */
-.job-card {
+.position-row {
   display: flex;
   align-items: center;
-  width: 100%;
-  text-align: left;
+  justify-content: space-between;
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
-  padding: var(--space-5) var(--space-6);
-  cursor: pointer;
-  transition:
-    border-color var(--transition-fast),
-    box-shadow var(--transition-fast);
-  font-family: inherit;
-  font-size: inherit;
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-6);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
-.job-card:hover {
-  border-color: var(--color-primary-200);
+.position-row:hover {
+  border-color: var(--color-primary-300);
   box-shadow: var(--shadow-sm);
 }
 
-.job-card:focus-visible {
-  outline: 2px solid var(--color-border-focus);
-  outline-offset: 2px;
-}
-
-.job-card__main {
+.position-row__main {
   flex: 1;
   min-width: 0;
+  cursor: pointer;
 }
 
-.job-card__header {
+.position-row__title-group {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   margin-bottom: var(--space-1);
 }
 
-.job-card__title {
+.position-row__title {
   font-size: var(--text-base);
   font-weight: var(--font-semibold);
   color: var(--color-text-primary);
   margin: 0;
 }
 
-.job-card__description {
-  font-size: var(--text-sm);
+.position-row__description {
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
   margin: 0 0 var(--space-2) 0;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  max-width: 800px;
 }
 
-.job-card__meta {
+.position-row__meta-bar {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-4);
   flex-wrap: wrap;
 }
 
-.job-card__meta-item {
+.position-row__skills {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.position-row__skill-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  background-color: var(--color-gray-100);
+  color: var(--color-text-secondary);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-weight: var(--font-medium);
+}
+
+.position-row__req-dot {
+  width: 5px;
+  height: 5px;
+  background-color: var(--color-primary-600);
+  border-radius: 50%;
+}
+
+.position-row__skill-more {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.position-row__counts {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.meta-metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: var(--text-xs);
   color: var(--color-text-tertiary);
 }
 
-.job-card__meta-sep {
+.meta-metric svg {
+  width: 13px;
+  height: 13px;
+}
+
+.meta-sep {
   font-size: var(--text-xs);
   color: var(--color-gray-300);
 }
 
-.job-card__chevron {
+.meta-time {
+  font-size: var(--text-xs);
   color: var(--color-text-tertiary);
-  flex-shrink: 0;
-  margin-left: var(--space-4);
 }
+
+.position-row__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: var(--space-4);
+  flex-shrink: 0;
+}
+
+.dashboard__empty-card {
+  padding: var(--space-8);
+  border: 1px dashed var(--color-border);
+}
+
+@media (max-width: 768px) {
+  .position-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+  .position-row__actions {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
