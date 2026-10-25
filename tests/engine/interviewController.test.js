@@ -3,6 +3,11 @@ import { InterviewController } from '../../src/engine/interviewController.js';
 import { InterviewState } from '../../src/engine/stateMachine.js';
 import { EventType } from '../../src/engine/eventLog.js';
 
+let defaultMockNextTurn;
+vi.mock('../../src/data/engineApi.js', () => ({
+  nextTurn: vi.fn((...args) => defaultMockNextTurn(...args)),
+}));
+
 describe('InterviewController', () => {
   let sampleJob;
   let mockRecognizer;
@@ -10,6 +15,33 @@ describe('InterviewController', () => {
   let capabilities;
 
   beforeEach(() => {
+    defaultMockNextTurn = vi.fn().mockImplementation(({ job, transcript = [] }) => {
+      const cand = transcript.filter((x) => x.role === 'candidate');
+      if (transcript.length === 0) {
+        return {
+          action: 'INTRO',
+          say: sampleJob?.questions?.[0]?.text || 'Explain how React concurrency works.',
+          requirement: 'React concurrency',
+          why: 'Introductory turn',
+          questionIndex: 0,
+        };
+      }
+      if (cand.length >= 2) {
+        return {
+          action: 'WRAP_UP',
+          say: 'Thank you for your time. The recruiter will review your responses.',
+          why: 'Interview completed',
+          questionIndex: null,
+        };
+      }
+      return {
+        action: 'NEXT_QUESTION',
+        say: sampleJob?.questions?.[1]?.text || 'How do you structure micro-frontends?',
+        requirement: 'Micro-frontends',
+        why: 'Next question in interview',
+        questionIndex: 1,
+      };
+    });
     sampleJob = {
       id: 'job-test-1',
       title: 'Senior Frontend Engineer',
@@ -145,10 +177,11 @@ describe('InterviewController', () => {
     const submittedQ2 = controller.submitAnswer('Using module federation with decoupled deployment pipelines.');
     expect(submittedQ2).toBe(true);
 
-    // No more questions -> moves to COMPLETED
+    // Wrap-up is spoken aloud; when playback ends, session transitions to COMPLETED
+    mockSynthesizer._lastCallbacks.onEnd();
     expect(controller.getState()).toBe(InterviewState.COMPLETED);
     const transcript = controller.getTranscript();
-    expect(transcript.length).toBe(4); // Q1, A1, Q2, A2
+    expect(transcript.length).toBe(5); // Q1, A1, Q2, A2, WRAP_UP
     expect(transcript[1].recognizedText).toContain('React concurrency');
     expect(transcript[3].recognizedText).toContain('module federation');
   });

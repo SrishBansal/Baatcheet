@@ -9,22 +9,30 @@
  * @returns {object} engine job payload
  */
 export function toEngineJob(job) {
-  const skills = Array.isArray(job.skills) ? job.skills : [];
+  const skills = Array.isArray(job.skills)
+    ? job.skills
+    : Array.isArray(job.requirements)
+      ? job.requirements
+      : [];
   const skillById = new Map(skills.map((s) => [s.id, s]));
 
   const requirements = skills.map((s) => ({
     name: String(s.name || ''),
-    kind: s.priority === 'preferred' ? 'preferred' : 'required',
+    kind: (s.priority === 'preferred' || s.kind === 'preferred') ? 'preferred' : 'required',
   }));
 
   const questions = (Array.isArray(job.questions) ? job.questions : [])
     .filter((q) => String(q.text || '').trim().length > 0)
     .map((q) => {
-      const linked = Array.isArray(q.relatedSkills) ? q.relatedSkills : [];
+      const linked = Array.isArray(q.relatedSkills)
+        ? q.relatedSkills
+        : Array.isArray(q.requirementIds)
+          ? q.requirementIds
+          : [];
       const firstSkill = linked.length ? skillById.get(linked[0]) : null;
       return {
         text: String(q.text).trim(),
-        requirementName: firstSkill ? firstSkill.name : '',
+        requirementName: q.requirementName || (firstSkill ? firstSkill.name : ''),
       };
     });
 

@@ -395,6 +395,20 @@ export default function InterviewSession() {
           </div>
         )}
 
+        {session.engineError && (
+          <div className="alert alert--danger engine-error-alert" role="alert" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', margin: '0.75rem 0' }}>
+            <span>Interviewer unavailable: {session.engineError}</span>
+            <Button
+              id="retry-turn-btn"
+              variant="secondary"
+              size="sm"
+              onClick={() => session.retryTurn()}
+            >
+              Retry
+            </Button>
+          </div>
+        )}
+
         <div className="active-question-card">
           <div className="active-question-card__header">
             <Badge variant="draft" size="sm">
@@ -551,15 +565,6 @@ export default function InterviewSession() {
               onClick={() => session.clarifyQuestion()}
             >
               Clarify
-            </Button>
-            <Button
-              id="skip-btn"
-              variant="secondary"
-              size="sm"
-              disabled={!isListening && !isSpeaking}
-              onClick={() => session.skipQuestion()}
-            >
-              Skip Question
             </Button>
           </div>
 

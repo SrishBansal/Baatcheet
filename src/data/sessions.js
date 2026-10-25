@@ -202,10 +202,14 @@ export function createTurn({
   askedAt = new Date().toISOString(),
   answer,
   skipped = false,
+  action,
+  requirement,
+  questionIndex,
+  decision = null,
 }) {
   if (!questionId) throw new Error('[SessionTurn] questionId is required.');
-  if (kind !== 'question' && kind !== 'followup') {
-    throw new Error(`[SessionTurn] Invalid kind: ${kind}. Must be 'question' or 'followup'.`);
+  if (kind !== 'question' && kind !== 'followup' && kind !== 'closing') {
+    throw new Error(`[SessionTurn] Invalid kind: ${kind}. Must be 'question', 'followup', or 'closing'.`);
   }
   if (typeof text !== 'string' || !text.trim()) {
     throw new Error('[SessionTurn] text is required.');
@@ -228,9 +232,12 @@ export function createTurn({
     questionId,
     kind,
     text: text.trim(),
-    ...(kind === 'followup' ? { rationale: String(rationale).trim() } : {}),
+    ...(kind === 'followup' || rationale ? { rationale: String(rationale || '').trim() } : {}),
+    ...(action ? { action } : {}),
+    ...(requirement !== undefined ? { requirement } : {}),
+    ...(questionIndex !== undefined ? { questionIndex } : {}),
     askedAt,
-    decision: null,
+    decision,
     parentTurnId: null,
     requirementIds: [],
     ...(formattedAnswer ? { answer: formattedAnswer } : {}),

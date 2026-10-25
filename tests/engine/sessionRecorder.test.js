@@ -22,12 +22,44 @@ class LocalStorageMock {
 
 globalThis.localStorage = new LocalStorageMock();
 
+let defaultMockNextTurn;
+vi.mock('../../src/data/engineApi.js', () => ({
+  nextTurn: vi.fn((...args) => defaultMockNextTurn(...args)),
+}));
+
 describe('Session Recording & Controller Integration', () => {
   let sampleJob;
   let mockRecognizer;
   let mockSynthesizer;
 
   beforeEach(() => {
+    defaultMockNextTurn = vi.fn().mockImplementation(({ job, transcript = [] }) => {
+      const cand = transcript.filter((x) => x.role === 'candidate');
+      if (transcript.length === 0) {
+        return {
+          action: 'INTRO',
+          say: sampleJob?.questions?.[0]?.text || 'Explain React concurrency.',
+          requirement: 'React concurrency',
+          why: 'Initial question',
+          questionIndex: 0,
+        };
+      }
+      if (cand.length >= 2) {
+        return {
+          action: 'WRAP_UP',
+          say: 'Thank you.',
+          why: 'Done',
+          questionIndex: null,
+        };
+      }
+      return {
+        action: 'NEXT_QUESTION',
+        say: sampleJob?.questions?.[1]?.text || 'How do you structure micro-frontends?',
+        requirement: 'Micro-frontends',
+        why: 'Next question',
+        questionIndex: 1,
+      };
+    });
     sessionStore.clear();
 
     sampleJob = {

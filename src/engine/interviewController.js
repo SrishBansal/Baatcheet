@@ -25,6 +25,8 @@ import { createSessionRecord, createTurn, sessionStore, SessionStatus } from '..
 import { DeterministicTranscriptProvider, runSessionAnalysis } from '../analysis/provider.js';
 import { VoiceTurnEndpointer } from './endpointing.js';
 import { GeminiReasoner, DeterministicReasoner } from '../analysis/reasoner.js';
+import { nextTurn } from '../data/engineApi.js';
+import { toEngineJob } from './engineJob.js';
 
 export class InterviewController {
   /**
@@ -90,6 +92,79 @@ export class InterviewController {
     this.globalFollowUpCount = 0;
     this.maxGlobalFollowUps = options.maxGlobalFollowUps || 8;
     this._turnToken = 0;
+    this._isCallingNextTurn = false;
+    this.engineError = null;
+
+    if (options.reasoner && !options.nextTurn) {
+      this._nextTurn = ({ job, transcript }) => {
+        if (!transcript || transcript.length === 0) {
+          return {
+            action: 'INTRO',
+            say: job?.questions?.[0]?.text || 'Welcome to the interview. Tell me about your background.',
+            why: 'intro',
+            requirement: job?.requirements?.[0]?.name || '',
+            questionIndex: 0,
+          };
+        }
+        const lastCandidate = [...transcript].reverse().find((t) => t.role === 'candidate');
+        const candAnswer = lastCandidate?.text || '';
+        const lastInterviewer = [...transcript].reverse().find((t) => t.role === 'interviewer');
+
+        const mapDecision = (decision) => {
+          if (decision?.action === 'ASK_FOLLOW_UP' && decision.followUpQuestion) {
+            return {
+              action: 'FOLLOW_UP',
+              say: decision.followUpQuestion,
+              why: decision.reasoning || 'Follow-up elaboration',
+              requirement: job?.requirements?.[0]?.name || '',
+              questionIndex: this.currentTurn?.questionIndex ?? 0,
+              providerId: decision.providerId,
+              providerKind: decision.providerKind,
+            };
+          }
+          if (decision?.action === 'END') {
+            return {
+              action: 'WRAP_UP',
+              say: 'Thank you for your responses. The interview is complete.',
+              why: decision.reasoning || 'Interview ended',
+            };
+          }
+          const nextIdx = (this.currentTurn?.questionIndex ?? 0) + 1;
+          const nextQ = job?.questions?.[nextIdx];
+          if (nextQ) {
+            return {
+              action: 'NEXT_QUESTION',
+              say: nextQ.text,
+              why: 'advance',
+              requirement: nextQ.requirementName || '',
+              questionIndex: nextIdx,
+            };
+          }
+          return {
+            action: 'WRAP_UP',
+            say: 'Thank you for your time. The interview is complete.',
+            why: 'All questions covered',
+          };
+        };
+
+        const decisionRes = options.reasoner.reason({
+          jobTitle: job?.title,
+          requirements: job?.requirements,
+          currentQuestion: lastInterviewer?.text || '',
+          candidateAnswer: candAnswer,
+          history: [],
+          followUpCount: 0,
+          globalFollowUpCount: this.globalFollowUpCount || 0,
+        });
+
+        if (decisionRes && typeof decisionRes.then === 'function') {
+          return decisionRes.then(mapDecision);
+        }
+        return mapDecision(decisionRes);
+      };
+    } else {
+      this._nextTurn = options.nextTurn || nextTurn;
+    }
 
     // Session persistence & analysis abstraction
     this.sessionStore = options.sessionStore || sessionStore;
@@ -169,15 +244,43 @@ export class InterviewController {
   }
 
   getCurrentQuestion() {
+    if (this.currentTurn) {
+      return {
+        id: this.currentTurn.questionId,
+        text: this.currentTurn.text,
+        category: this.currentTurn.requirement || 'general',
+      };
+    }
     return this.questionManager.getCurrentQuestion();
   }
 
   getActivePrompt() {
+    if (this.currentTurn) {
+      return {
+        questionId: this.currentTurn.questionId,
+        text: this.currentTurn.text,
+        isFollowUp: this.currentTurn.kind === 'followup',
+        rationale: this.currentTurn.rationale || '',
+      };
+    }
     return this.questionManager.getActivePrompt();
   }
 
   getProgress() {
-    return this.questionManager.getProgress();
+    const total = (this.job?.questions?.length && this.job.questions.length > 0)
+      ? this.job.questions.length
+      : 5;
+    const current = Math.min(
+      total,
+      (this.currentTurn?.questionIndex !== undefined && this.currentTurn?.questionIndex !== null)
+        ? this.currentTurn.questionIndex + 1
+        : (this.sessionRecord?.turns?.filter((t) => t.kind === 'question').length || 0)
+    );
+    return {
+      current,
+      total,
+      isComplete: this.stateMachine.getState() === InterviewState.COMPLETED,
+    };
   }
 
   getTranscript() {
@@ -249,100 +352,226 @@ export class InterviewController {
     }
 
     this.stateMachine.transition(InterviewEvent.START_INTERVIEW);
-    this._presentCurrentQuestion();
+
+    const hasQuestions = Array.isArray(this.job?.questions) && this.job.questions.length > 0;
+    const hasReqs = (Array.isArray(this.job?.skills) && this.job.skills.length > 0) ||
+      (Array.isArray(this.job?.requirements) && this.job.requirements.length > 0);
+    if (!hasQuestions && !hasReqs) {
+      this._finishInterview();
+      return Promise.resolve();
+    }
+
+    return this._callNextTurn();
   }
 
-  /**
-   * Present the current active question (speech synthesis + visual presentation).
-   */
-  _presentCurrentQuestion() {
-    if (this.isDestroyed) return;
+  _advanceOrFinish() {
+    if (this.isAdvancing || this._isCallingNextTurn || this.isDestroyed) return;
+    this._callNextTurn();
+  }
 
-    const prompt = this.questionManager.getActivePrompt();
-    if (!prompt) {
-      this._finishInterview();
+  _buildTranscript() {
+    const list = [];
+    if (this.sessionRecord && Array.isArray(this.sessionRecord.turns)) {
+      for (const turn of this.sessionRecord.turns) {
+        if (turn.text) {
+          list.push({
+            role: 'interviewer',
+            text: turn.text,
+            action: turn.action || (turn.kind === 'followup' ? 'FOLLOW_UP' : 'NEXT_QUESTION'),
+          });
+        }
+        if (turn.answer && turn.answer.finalText && !turn.skipped) {
+          list.push({
+            role: 'candidate',
+            text: turn.answer.finalText,
+          });
+        }
+      }
+    }
+    return list;
+  }
+
+  _callNextTurn() {
+    if (this._isCallingNextTurn || this.isDestroyed) return Promise.resolve();
+    this._isCallingNextTurn = true;
+    this.engineError = null;
+
+    const turnToken = ++this._turnToken;
+    const transcript = this._buildTranscript();
+    const jobSnapshot = this.sessionRecord?.jobSnapshot || this.job;
+    const engineJob = toEngineJob(jobSnapshot);
+
+    const handleSuccess = (result) => {
+      this._isCallingNextTurn = false;
+      if (
+        turnToken !== this._turnToken ||
+        this.isDestroyed ||
+        this.stateMachine.getState() === InterviewState.COMPLETED ||
+        this.stateMachine.getState() === InterviewState.ABORTED
+      ) {
+        return;
+      }
+      this._applyEngineResult(result);
+    };
+
+    const handleError = (err) => {
+      this._isCallingNextTurn = false;
+      if (
+        turnToken !== this._turnToken ||
+        this.isDestroyed ||
+        this.stateMachine.getState() === InterviewState.COMPLETED ||
+        this.stateMachine.getState() === InterviewState.ABORTED
+      ) {
+        return;
+      }
+      this.isSubmitting = false;
+      this.engineError = err?.message || 'server_error';
+      if (this.onError) {
+        this.onError(`Interviewer unavailable: ${this.engineError}`);
+      }
+      if (this.onStateChange) {
+        this.onStateChange(this.stateMachine.getState(), this.stateMachine.getState(), {});
+      }
+    };
+
+    let res;
+    try {
+      res = this._nextTurn({ job: engineJob, transcript });
+    } catch (err) {
+      handleError(err);
+      return Promise.resolve();
+    }
+
+    if (res && typeof res.then === 'function') {
+      return res.then(handleSuccess, handleError);
+    } else {
+      handleSuccess(res);
+      return Promise.resolve();
+    }
+  }
+
+  retryTurn() {
+    if (this._isCallingNextTurn || this.isDestroyed) return Promise.resolve();
+    this.engineError = null;
+    return this._callNextTurn();
+  }
+
+  _applyEngineResult(result) {
+    if (!result || !result.action) {
+      this.engineError = 'invalid_turn';
+      this.isSubmitting = false;
       return;
     }
 
-    this.questionStartTime = Date.now();
-    this.interimText = '';
-    this.currentAnswerDraft = '';
-    this.isSubmitting = false;
+    if (this.sessionRecord) {
+      this.sessionRecord.reasoning = {
+        providerId: result.providerId || 'gemini',
+        providerKind: result.providerKind || 'semantic',
+      };
+    }
 
-    // Mark synthesis as playing so endpointer discards any stale mic activity
-    this._endpointer.setSynthPlaying();
+    const kind = (result.action === 'INTRO' || result.action === 'NEXT_QUESTION')
+      ? 'question'
+      : (result.action === 'FOLLOW_UP' ? 'followup' : 'closing');
 
-    // Log question presentation turn in transcript
-    this.eventLog.logQuestion({
-      questionId: prompt.questionId,
-      text: prompt.text,
-      isFollowUp: prompt.isFollowUp,
-      category: this.questionManager.getCurrentQuestion()?.category || 'general',
+    const qIndex = result.questionIndex;
+    const matchedQ = (qIndex !== undefined && qIndex !== null && this.job?.questions)
+      ? this.job.questions[qIndex]
+      : null;
+    const questionId = matchedQ?.id || `q-${qIndex ?? (this.sessionRecord?.turns?.length || 0)}`;
+
+    const turn = createTurn({
+      id: `turn-${(this.sessionRecord?.turns?.length || 0) + 1}-${Date.now()}`,
+      questionId,
+      kind,
+      text: result.say,
+      action: result.action,
+      requirement: result.requirement || '',
+      rationale: result.why || '',
+      questionIndex: result.questionIndex,
+      decision: { providerId: 'gemini', providerKind: 'semantic' },
+      askedAt: new Date().toISOString(),
+      skipped: false,
     });
 
+    this.currentTurn = turn;
     if (this.sessionRecord) {
-      const isFollowUp = Boolean(prompt.isFollowUp);
-      if (isFollowUp && (!prompt.rationale || !prompt.rationale.trim())) {
-        throw new Error('[InterviewController] Rationale is required for follow-up turns.');
-      }
-
-      const isSamePrompt =
-        this.currentTurn &&
-        this.currentTurn.questionId === prompt.questionId &&
-        this.currentTurn.kind === (isFollowUp ? 'followup' : 'question') &&
-        !this.currentTurn.answer &&
-        !this.currentTurn.skipped;
-
-      if (!isSamePrompt) {
-        const turn = createTurn({
-          id: `turn-${this.sessionRecord.turns.length + 1}-${Date.now()}`,
-          questionId: prompt.questionId || 'unknown',
-          kind: isFollowUp ? 'followup' : 'question',
-          text: prompt.text || '',
-          rationale: isFollowUp ? prompt.rationale : undefined,
-          askedAt: new Date().toISOString(),
-          skipped: false,
-        });
-        this.currentTurn = turn;
-        this.sessionRecord.turns.push(turn);
-        this._persistSession();
-      }
+      this.sessionRecord.turns.push(turn);
+      this._persistSession();
     }
+
+    this.eventLog.logQuestion({
+      questionId: turn.questionId,
+      text: result.say,
+      isFollowUp: kind === 'followup',
+      category: result.requirement || 'general',
+    });
 
     if (this.onTranscriptUpdate) {
       this.onTranscriptUpdate(this.eventLog.getTranscript());
     }
 
-    // If speech synthesis is supported, speak the prompt
-    if (this.synthesizer.isSupported()) {
-      this.synthesizer.speak(prompt.text, {
-        onStart: () => {},
-        onEnd: () => {
-          this._endpointer.setSynthFinished();
-          this._handleQuestionPlaybackFinished();
-        },
-        onError: (err) => {
-          // Guard: If synthesis was intentionally canceled (e.g. pause, barge-in interruption,
-          // skip, repeat, or stop), NEVER treat cancellation as playback completion.
-          if (err?.isCanceled) {
-            return;
-          }
+    const state = this.stateMachine.getState();
+    if (state === InterviewState.PROCESSING_RESPONSE) {
+      if (result.action === 'FOLLOW_UP') {
+        this.stateMachine.transition(InterviewEvent.TRIGGER_FOLLOW_UP);
+      } else {
+        this.stateMachine.transition(InterviewEvent.NEXT_QUESTION);
+      }
+    }
 
-          // For genuine, unexpected speech synthesis errors (e.g. audio device failure, speech crash):
-          this._endpointer.setSynthFinished();
+    this._speakResult(result);
+  }
+
+  _speakResult(result) {
+    this.questionStartTime = Date.now();
+    this.interimText = '';
+    this.currentAnswerDraft = '';
+    this.isSubmitting = false;
+
+    this._stopAllAudio();
+    this._endpointer.setSynthPlaying();
+
+    const onFinished = () => {
+      this._endpointer.setSynthFinished();
+      if (result.action === 'WRAP_UP') {
+        this._finishInterview();
+      } else {
+        this._handleQuestionPlaybackFinished();
+      }
+    };
+
+    if (this.synthesizer.isSupported()) {
+      this.synthesizer.speak(result.say, {
+        onStart: () => {},
+        onEnd: onFinished,
+        onError: (err) => {
+          if (err?.isCanceled) return;
           this.speechErrorMessage = 'Audio playback was unavailable. You can read the question text and answer.';
           if (this.onError) {
             this.onError(this.speechErrorMessage);
           }
-
-          // Graceful recovery: allow candidate to read visible question and submit answer
-          this._handleQuestionPlaybackFinished();
+          onFinished();
         },
       });
     } else {
-      // If synthesis is unsupported, present visually and transition immediately
-      this._endpointer.setSynthFinished();
-      this._handleQuestionPlaybackFinished();
+      onFinished();
+    }
+  }
+
+  _presentCurrentQuestion() {
+    const prompt = this.questionManager?.getActivePrompt();
+    if (prompt && prompt.isFollowUp && (!prompt.rationale || !prompt.rationale.trim())) {
+      throw new Error('[InterviewController] Rationale is required for follow-up turns.');
+    }
+    if (this.currentTurn?.text) {
+      this._speakResult({
+        say: this.currentTurn.text,
+        action: this.currentTurn.action || 'NEXT_QUESTION',
+        why: this.currentTurn.rationale,
+        requirement: this.currentTurn.requirement,
+        questionIndex: this.currentTurn.questionIndex,
+      });
     }
   }
 
@@ -351,6 +580,11 @@ export class InterviewController {
    */
   _handleQuestionPlaybackFinished() {
     if (this.isDestroyed) return;
+
+    if (this.currentTurn?.action === 'WRAP_UP') {
+      this._finishInterview();
+      return;
+    }
 
     if (this.stateMachine.getState() === InterviewState.SPEAKING_QUESTION) {
       this.stateMachine.transition(InterviewEvent.QUESTION_SPOKEN);
@@ -463,122 +697,8 @@ export class InterviewController {
     // Transition state machine: LISTENING -> PROCESSING_RESPONSE
     this.stateMachine.transition(InterviewEvent.RESPONSE_RECEIVED);
 
-    this._handleDeciding();
+    this._callNextTurn();
     return true;
-  }
-
-  /**
-   * Handle adaptive evaluation and deciding phase for the current response.
-   */
-  _handleDeciding() {
-    const turnToken = ++this._turnToken;
-
-    if (!this.reasoner) {
-      this._advanceOrFinish();
-      return;
-    }
-
-    const currentPrompt = this.questionManager.getActivePrompt();
-    const candidateAnswer = this.currentTurn?.answer?.finalText || '';
-    const currentQuestion = currentPrompt?.text || '';
-    const followUpCount = this.questionManager.getCurrentFollowUpCount();
-
-    const canFollowUp =
-      !currentPrompt?.isFollowUp &&
-      this.questionManager.canFollowUp() &&
-      this.globalFollowUpCount < this.maxGlobalFollowUps;
-
-    const reasonParams = {
-      jobTitle: this.job?.title,
-      requirements: this.job?.requirements,
-      currentQuestion,
-      candidateAnswer,
-      history: (this.sessionRecord?.turns || []).slice(0, -1).map((t) => ({
-        question: t.text || '',
-        answer: t.answer?.finalText || '',
-      })),
-      followUpCount,
-      globalFollowUpCount: this.globalFollowUpCount,
-    };
-
-    let result;
-    try {
-      result = this.reasoner.reason(reasonParams);
-    } catch {
-      result = {
-        action: 'ADVANCE',
-        reasoning: 'Reasoner call failed synchronously; advancing.',
-        providerId: 'deterministic-fallback',
-        providerKind: 'deterministic',
-      };
-    }
-
-    if (result && typeof result.then === 'function') {
-      result
-        .then((decision) => {
-          this._applyDecision(turnToken, decision, canFollowUp);
-        })
-        .catch(() => {
-          this._applyDecision(
-            turnToken,
-            {
-              action: 'ADVANCE',
-              reasoning: 'Reasoner promise rejected; advancing.',
-              providerId: 'deterministic-fallback',
-              providerKind: 'deterministic',
-            },
-            canFollowUp
-          );
-        });
-    } else {
-      this._applyDecision(turnToken, result, canFollowUp);
-    }
-  }
-
-  _applyDecision(turnToken, decision, canFollowUp) {
-    if (
-      turnToken !== this._turnToken ||
-      this.isDestroyed ||
-      this.stateMachine.getState() !== InterviewState.PROCESSING_RESPONSE
-    ) {
-      return;
-    }
-
-    if (this.currentTurn) {
-      this.currentTurn.decision = decision;
-    }
-    if (this.sessionRecord) {
-      this.sessionRecord.reasoning = {
-        providerId: decision?.providerId || 'deterministic-fallback',
-        providerKind: decision?.providerKind || 'deterministic',
-      };
-      this._persistSession();
-    }
-
-    if (decision?.action === 'END') {
-      this.isSubmitting = false;
-      this._finishInterview();
-      return;
-    }
-
-    if (canFollowUp && decision?.action === 'ASK_FOLLOW_UP' && decision.followUpQuestion) {
-      this.globalFollowUpCount++;
-      this.questionManager.recordFollowUp(
-        decision.followUpQuestion,
-        decision.reasoning || 'Follow-up elaboration'
-      );
-      this.isSubmitting = false;
-      this.stateMachine.transition(InterviewEvent.TRIGGER_FOLLOW_UP);
-
-      if (this.onTranscriptUpdate) {
-        this.onTranscriptUpdate(this.eventLog.getTranscript());
-      }
-
-      this._presentCurrentQuestion();
-    } else {
-      this.isSubmitting = false;
-      this._advanceOrFinish();
-    }
   }
 
   /**
@@ -601,7 +721,7 @@ export class InterviewController {
       this.recognizer.stop();
     }
 
-    const currentPrompt = this.questionManager.getActivePrompt();
+    const currentPrompt = this.getActivePrompt();
     this.eventLog.logSkip({
       questionId: currentPrompt?.questionId || 'unknown',
       isFollowUp: currentPrompt?.isFollowUp || false,
@@ -617,29 +737,9 @@ export class InterviewController {
       this.onTranscriptUpdate(this.eventLog.getTranscript());
     }
 
-    this.questionManager.skipQuestion();
     this.stateMachine.transition(InterviewEvent.SKIP_QUESTION);
-
-    this._advanceOrFinish();
+    this._callNextTurn();
     return true;
-  }
-
-  /**
-   * Advance to the next question or complete interview.
-   */
-  _advanceOrFinish() {
-    if (this.isAdvancing || this.isDestroyed) return;
-    this.isAdvancing = true;
-
-    if (this.questionManager.hasNextQuestion()) {
-      this.questionManager.advanceQuestion();
-      this.stateMachine.transition(InterviewEvent.NEXT_QUESTION);
-      this.isSubmitting = false;
-      this.isAdvancing = false;
-      this._presentCurrentQuestion();
-    } else {
-      this._finishInterview();
-    }
   }
 
   _finishInterview() {
@@ -670,7 +770,7 @@ export class InterviewController {
 
     this.stateMachine.transition(InterviewEvent.FINISH);
     this.eventLog.logEvent(EventType.INTERVIEW_COMPLETED, {
-      totalQuestions: this.questionManager.getTotalCount(),
+      totalQuestions: this.sessionRecord?.turns?.filter((t) => t.kind === 'question').length || 0,
       completedAt: new Date().toISOString(),
     });
 
@@ -686,7 +786,6 @@ export class InterviewController {
     this._stopAllAudio();
   }
 
-
   /**
    * Re-speak the current question.
    */
@@ -700,11 +799,17 @@ export class InterviewController {
     }
 
     this.eventLog.logEvent(EventType.REPETITION_REQUESTED, {
-      questionId: this.questionManager.getActivePrompt()?.questionId,
+      questionId: this.currentTurn?.questionId,
     });
 
     this.stateMachine.transition(InterviewEvent.REQUEST_REPEAT);
-    this._presentCurrentQuestion();
+    this._speakResult({
+      say: this.currentTurn?.text || '',
+      action: this.currentTurn?.action || 'NEXT_QUESTION',
+      why: this.currentTurn?.rationale,
+      requirement: this.currentTurn?.requirement,
+      questionIndex: this.currentTurn?.questionIndex,
+    });
     return true;
   }
 
@@ -721,11 +826,17 @@ export class InterviewController {
     }
 
     this.eventLog.logEvent(EventType.CLARIFICATION_REQUESTED, {
-      questionId: this.questionManager.getActivePrompt()?.questionId,
+      questionId: this.currentTurn?.questionId,
     });
 
     this.stateMachine.transition(InterviewEvent.REQUEST_CLARIFY);
-    this._presentCurrentQuestion();
+    this._speakResult({
+      say: this.currentTurn?.text || '',
+      action: this.currentTurn?.action || 'NEXT_QUESTION',
+      why: this.currentTurn?.rationale,
+      requirement: this.currentTurn?.requirement,
+      questionIndex: this.currentTurn?.questionIndex,
+    });
     return true;
   }
 
@@ -885,10 +996,10 @@ export class InterviewController {
   }
 
   _stopAllAudio() {
-    if (this.synthesizer) {
+    if (this.synthesizer && typeof this.synthesizer.stop === 'function') {
       this.synthesizer.stop();
     }
-    if (this.recognizer && this.recognizer.isListening) {
+    if (this.recognizer && this.recognizer.isListening && typeof this.recognizer.stop === 'function') {
       this.recognizer.stop();
     }
   }

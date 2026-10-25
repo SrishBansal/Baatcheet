@@ -59,6 +59,7 @@ export function useInterviewSession(job, options = {}) {
     transcript,
     interimSpeech,
     speechError,
+    engineError: controller?.engineError || null,
     inputMode: controller?.getInputMode() || 'text',
     capabilities: controller?.capabilities || null,
     reasoning: controller?.sessionRecord?.reasoning || { providerKind: 'deterministic', providerId: 'none' },
@@ -71,6 +72,11 @@ export function useInterviewSession(job, options = {}) {
 
     startInterview: useCallback(() => {
       controllerRef.current?.startInterview();
+      forceUpdate();
+    }, [forceUpdate]),
+
+    retryTurn: useCallback(() => {
+      controllerRef.current?.retryTurn();
       forceUpdate();
     }, [forceUpdate]),
 

@@ -175,6 +175,13 @@ describe('GeminiAnalysisProvider', () => {
       }),
     };
 
+    const mockNextTurn = vi.fn().mockImplementation(({ transcript = [] }) => {
+      if (transcript.length === 0) {
+        return { action: 'INTRO', say: 'Intro question.', why: 'intro', questionIndex: 0 };
+      }
+      return { action: 'WRAP_UP', say: 'Thank you.', why: 'done' };
+    });
+
     // Case 1: Session aborted early via endEarly()
     const abortedController = new InterviewController({
       job,
@@ -182,6 +189,7 @@ describe('GeminiAnalysisProvider', () => {
       analysisProvider: mockAnalysisProvider,
       speechRecognizer: { isSupported: () => false, stop: () => {}, destroy: () => {} },
       speechSynthesizer: { isSupported: () => false, stop: () => {}, destroy: () => {} },
+      nextTurn: mockNextTurn,
     });
     abortedController.grantConsent();
     abortedController.startInterview();
@@ -197,6 +205,7 @@ describe('GeminiAnalysisProvider', () => {
       analysisProvider: mockAnalysisProvider,
       speechRecognizer: { isSupported: () => false, stop: () => {}, destroy: () => {} },
       speechSynthesizer: { isSupported: () => false, stop: () => {}, destroy: () => {} },
+      nextTurn: mockNextTurn,
     });
     completedController.grantConsent();
     completedController.startInterview();
