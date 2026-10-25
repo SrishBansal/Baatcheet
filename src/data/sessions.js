@@ -142,7 +142,9 @@ export function migrateSession(record) {
 
   // Already current
   if (version === SESSION_SCHEMA_VERSION) {
-    return { ...current, outcome: current.outcome ?? 'undecided', outcomeAt: current.outcomeAt ?? null };
+    current.outcome ??= 'undecided';
+    current.outcomeAt ??= null;
+    return current;
   }
 
   // v0 → v1: unversioned prototype sessions — stamp the version, keep all data
