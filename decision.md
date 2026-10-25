@@ -361,7 +361,42 @@
 - **Rationale:** Resolves audio usability defects purely using free Web Speech APIs, eliminates race conditions between cancellation and question transitions, and provides a distinct, credible B2B recruiting product experience.
 - **Trade-offs and risks:** Voice quality remains bounded by browser/OS-installed voices; on systems with only legacy synthesizer voices, quality will be lower than cloud neural voices, but visual text fallback ensures 100% interview accessibility.
 - **Requirements affected:** C.2, C.4, A.1–A.4, Objective 1 & 2.
-- **Revisit condition:** When server-side audio infrastructure is introduced in multi-user phases.
+### ADR-027: Versioned interview session persistence, exact evidence validation, and deterministic analysis provider abstraction
+
+- **Status:** Accepted
+- **Date:** 2026-10-25
+- **Context:** Finishing or aborting an interview produced no durable session record, candidate responses were lost upon returning to the recruiter dashboard, and no honest, evidence-backed evaluation report existed.
+- **Decision:**
+  - **Versioned InterviewSession Domain Model:** Defined schema version `1` for sessions (`SESSION_SCHEMA_VERSION = 1`) stored under localStorage key `hirepilot:sessions`. Record captures `id`, `jobId`, `jobSnapshot` (immutable copy of role title, requirements, criteria, and questions at interview start), `status` (`in_progress` | `completed` | `aborted`), `startedAt`, `endedAt`, `turns`, and `analysis`.
+  - **Incremental Persistence:** `InterviewController` writes to `sessionStore` incrementally at interview start, each question asked, each finalized answer, each skip, and upon completion or abort. Candidate reload or abort preserves all recorded turns.
+  - **Requirement Linkage:** Added `requirementIds` to `InterviewQuestion` defaulting to `relatedSkills`. Unlinked questions are reported as "Unmapped", never guessed.
+  - **Analysis Provider Abstraction & Deterministic Transcript Provider:** Created `AnalysisProvider` interface (`analyze(session) => Promise<AnalysisResult>`). Default implementation `DeterministicTranscriptProvider` maps recorded finalized answers to linked requirements producing only `Not assessed` (no linked questions answered) and `Awaiting analysis` (verbatim quotes recorded, non-evaluative). Semantic labels (`Demonstrated`, `Partially demonstrated`, `Insufficient evidence`) are prohibited for deterministic providers.
+  - **Exact Substring Evidence Validation:** Added `validateEvidenceQuotes` which strictly rejects any evidence quote not found as an exact substring in finalized candidate answers, marking rejected quotes invalid and surfacing their count.
+  - **Honest Recruiter Reporting UI:** Added `/interviews` directory and `/interviews/:sessionId` report page displaying honest provider status banners, objective computed-fact executive summaries, requirement coverage, unmapped questions, and full chronological transcripts with follow-up rationales.
+- **Alternatives considered:**
+  - Mock semantic provider fabricating ratings: Rejected as deceptive; deterministic mode honestly reflects un-evaluated evidence.
+  - Deferring session persistence: Rejected because candidates and recruiters lost interview results immediately upon navigating.
+- **Rationale:** Satisfies core requirement for durable, evidence-backed screening records with zero hallucinated evaluations or fabricated metrics.
+- **Trade-offs and risks:** Single-client localStorage storage is bounded by browser storage limits; multi-user backend migration remains scheduled for future phase.
+- **Requirements affected:** D.1–D.4, E.1–E.5, F.2.
+- **Revisit condition:** When real semantic AI provider is integrated in Phase 3.
+
+### ADR-028: Multi-layer evidence verification, ServerSemanticAnalysisProvider, and non-destructive retry
+
+- **Status:** Accepted
+- **Date:** 2026-10-25
+- **Context:** Automated or semantic evaluations must be strictly grounded in verbatim transcript evidence. Model hallucinations, ungrounded competence ratings, wrong-turn attribution, and fabricated quotes must be rejected deterministically by code before reaching recruiter review.
+- **Decision:**
+  - **5 Code-Enforced Verification Layers:**
+    1. Exact Substring Quote Validation: Quotes must be exact substrings of recorded candidate answers (whitespace normalized).
+    2. Turn Citation & Linkage: Cited turns must exist and be linked to the requirement (or explicitly flagged as cross-turn evidence).
+    3. Status Consistency: `Demonstrated` requires >=1 valid quote (downgraded to `Insufficient evidence` if none); `Partially demonstrated` requires >=1 valid quote and missing evidence explanation; `Not assessed` is computed by code based on interview coverage and cannot be overridden by model ratings.
+    4. Contradiction Justification: Contradiction claims must cite >=2 valid quotes demonstrating the opposing statements.
+    5. Observation/Inference Separation: Observations are candidate-grounded; confidence is capped by code (single short quotes cannot yield `high` confidence).
+  - **ServerSemanticAnalysisProvider & Registry:** Registered `server-semantic-v1` in `ProviderRegistry` calling server boundary `/api/analysis/session`.
+  - **Non-Destructive Retry:** When analysis encounters an upstream timeout or failure, the stored session preserves all turns, job snapshots, and candidate responses. Recruiters can retry analysis on the existing transcript without altering interview data.
+- **Rationale:** Prevents model hallucination from contaminating candidate evaluation records and guarantees that every displayed quote is factual evidence.
+- **Requirements affected:** Checkpoint 5, ADR-020.
 
 ---
 

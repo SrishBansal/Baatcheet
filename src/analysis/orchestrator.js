@@ -18,13 +18,10 @@
 import {
   AnalysisProvider,
   DeterministicTranscriptProvider,
+  ServerSemanticAnalysisProvider,
   runSessionAnalysis,
   RequirementAssessmentStatus,
 } from './provider.js';
-
-/* ------------------------------------------------------------------
-   Provider IDs
-   ------------------------------------------------------------------ */
 
 export const PROVIDER_ID = Object.freeze({
   DETERMINISTIC: 'deterministic-transcript-v1',
@@ -82,6 +79,14 @@ registerProvider({
   kind: 'deterministic',
   requiresServer: false,
   factory: () => new DeterministicTranscriptProvider(),
+});
+
+// Register the server semantic provider
+registerProvider({
+  id: PROVIDER_ID.SERVER_SEMANTIC,
+  kind: 'semantic',
+  requiresServer: true,
+  factory: () => new ServerSemanticAnalysisProvider(),
 });
 
 /* ------------------------------------------------------------------
