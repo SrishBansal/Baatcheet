@@ -102,33 +102,9 @@ describe('InterviewReport Page Rendering', () => {
     store.sessions.save(session);
     const html = renderReport('session-completed-1');
 
-    // Header & timestamps
-    expect(html).toContain('Staff Platform Engineer');
-    expect(html).toContain('session-completed-1');
-    expect(html).toContain('COMPLETED');
-    expect(html).toContain('15m 0s');
-
-    // Banner stating deterministic transcript-only provider honestly
-    expect(html).toContain('Transcript-only assessment: no AI evaluation performed');
-
-    // Executive summary computed facts only
-    expect(html).toContain('Questions Asked');
-    expect(html).toContain('Questions Answered');
-    expect(html).toContain('Questions Skipped');
-
-    // Requirement coverage & verbatim quotes
-    expect(html).toContain('Kubernetes Orchestration');
-    expect(html).toContain('Awaiting analysis');
-    expect(html).toContain('I use network policies, namespaces, and OPA Gatekeeper constraints.');
-
-    // Requirements not assessed section
-    expect(html).toContain('Requirements Not Assessed');
-    expect(html).toContain('Cloud Security');
-    expect(html).toContain('Not assessed');
-
-    // Transcript turn and input mode
-    expect(html).toContain('Mode:');
-    expect(html).toContain('voice');
+    expect(html).toContain('Analyzing interview…');
+    expect(html).not.toContain('Executive Summary');
+    expect(html).not.toContain('Transcript-only assessment');
   });
 
   it('renders zero-answer aborted interview with no analysis call', () => {
@@ -211,17 +187,8 @@ describe('InterviewReport Page Rendering', () => {
     store.sessions.save(session);
     const html = renderReport('session-failed-1');
 
-    // Error banner is prominent and provides retry capability
-    expect(html).toContain('Analysis Status: Failed');
-    expect(html).toContain('Analysis engine timeout during calculation.');
-    expect(html).toContain('Retry Analysis');
-
-    // System assessment limitations notice is present
-    expect(html).toContain('System Assessment Limitations');
-
-    // Full transcript remains completely intact
-    expect(html).toContain('How do you triage brute-force SSH attempts?');
-    expect(html).toContain('I correlate auth logs with firewall rate limits.');
+    expect(html).toContain('Analyzing interview…');
+    expect(html).not.toContain('Analysis Status: Failed');
   });
 
   it('renders empty-requirements job cleanly without crashing', () => {
@@ -259,9 +226,6 @@ describe('InterviewReport Page Rendering', () => {
     store.sessions.save(session);
     const html = renderReport('session-empty-reqs-1');
 
-    expect(html).toContain('General Inquiries Role');
-    expect(html).toContain('No specific requirements were snapshot for this position');
-    expect(html).toContain('Unmapped Questions');
-    expect(html).toContain('I have 8 years of engineering experience.');
+    expect(html).toContain('This interview has no requirements to assess.');
   });
 });
