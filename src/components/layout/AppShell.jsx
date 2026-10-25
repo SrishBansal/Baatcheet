@@ -58,10 +58,20 @@ export default function AppShell() {
         <div className="sidebar-overlay sidebar-overlay--visible" onClick={closeSidebar} />
       )}
 
-      {/* Sidebar */}
+      <aside className="app-rail" aria-label="Primary shortcuts">
+        <div className="app-rail__mark" aria-hidden="true">B</div>
+        <nav className="app-rail__nav">
+          {NAV_ITEMS.flatMap((section) => section.links).map((link) => (
+            <NavLink key={link.to} to={link.to} end={link.to === '/'} className={({ isActive }) => `app-rail__link ${isActive ? 'app-rail__link--active' : ''}`} aria-label={link.label}>
+              <link.icon />
+            </NavLink>
+          ))}
+        </nav>
+      </aside>
+
+      {/* Navigation panel */}
       <aside className={`app-sidebar ${sidebarOpen ? 'app-sidebar--open' : ''}`}>
         <div className="app-sidebar__brand">
-          <div className="app-sidebar__logo" aria-hidden="true">B</div>
           <div>
             <div className="app-sidebar__title">Baatcheet</div>
             <div className="app-sidebar__subtitle">AI Screening</div>
@@ -91,7 +101,7 @@ export default function AppShell() {
         </nav>
 
         <div className="app-sidebar__footer">
-          <span className="app-sidebar__version">Recruiter workspace</span>
+          <span className="app-sidebar__version">Recruiting workspace</span>
           <span className="ai-status-chip app-sidebar__ai-status">{ai?.error ? 'Server not reachable' : ai?.geminiConfigured ? `AI: Gemini connected (${ai.model || 'Gemini'})` : 'AI: NOT configured'}</span>
         </div>
       </aside>

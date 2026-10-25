@@ -208,35 +208,6 @@ export default function Dashboard() {
                   </div>
                 )}
               </div>
-
-              {/* Quick Actions Card */}
-              <div className="dashboard-card card">
-                <h2 className="dashboard-card__title">Quick Actions</h2>
-                <div className="quick-actions-row">
-                  <Button
-                    variant="secondary"
-                    size="md"
-                    onClick={() => navigate('/positions/new')}
-                    icon={<PlusIcon />}
-                  >
-                    Add Position
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="md"
-                    onClick={() => navigate('/positions')}
-                  >
-                    Browse Positions
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="md"
-                    onClick={() => navigate('/interviews')}
-                  >
-                    Review Interviews
-                  </Button>
-                </div>
-              </div>
             </div>
 
             {/* Right: Recent Operational Activity */}
