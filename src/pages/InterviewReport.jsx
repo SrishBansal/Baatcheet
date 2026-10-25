@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { store } from '../data/store.js';
 import Button from '../components/ui/Button.jsx';
+import PageHeader from '../components/ui/PageHeader.jsx';
+import Banner from '../components/ui/Banner.jsx';
 import { health, makeReport } from '../data/engineApi.js';
 import { toEngineJob } from '../engine/engineJob.js';
 import GeminiReport from './GeminiReport.jsx';
@@ -48,8 +50,8 @@ export default function InterviewReport() {
   const analysis = session.analysis || {};
   if (!hasAnswers) return <div className="interview-report-page"><p>No answers were recorded; nothing to analyze.</p></div>;
   if (!requirements.length) return <div className="interview-report-page"><p>This interview has no requirements to assess.</p></div>;
-  if (analysis.providerId === 'gemini' && analysis.status === 'complete') return <div className="interview-report-page"><h1>{session.candidate?.name || 'Unnamed candidate'}</h1><Button size="sm" onClick={run} disabled={running}>Re-run analysis</Button><GeminiReport analysis={analysis} turns={turns} /></div>;
-  if (analysis.providerId === 'gemini' && analysis.status === 'failed') return <div className="interview-report-page"><div className="report-banner report-banner--failed" role="alert">{engineErrorMessage(analysis.error)} <small>{analysis.error}</small><Button onClick={run} disabled={running}>{running ? 'Retrying analysis…' : 'Retry analysis'}</Button></div></div>;
+  if (analysis.providerId === 'gemini' && analysis.status === 'complete') return <div className="interview-report-page"><PageHeader title={session.candidate?.name || 'Unnamed candidate'} actions={<Button size="sm" onClick={run} disabled={running}>Re-run analysis</Button>} /><GeminiReport analysis={analysis} turns={turns} candidateName={session.candidate?.name || 'Candidate'} /></div>;
+  if (analysis.providerId === 'gemini' && analysis.status === 'failed') return <div className="interview-report-page"><Banner tone="error" actions={<Button onClick={run} disabled={running}>{running ? 'Retrying analysis…' : 'Retry analysis'}</Button>}>{engineErrorMessage(analysis.error)} <small>{analysis.error}</small></Banner></div>;
   if (configured === false) return <div className="interview-report-page"><p>AI is not configured; no evaluation performed.</p></div>;
   return <div className="interview-report-page"><p>Analyzing interview…</p></div>;
 }

@@ -4,6 +4,10 @@ import { store } from '../data/store.js';
 import Button from '../components/ui/Button.jsx';
 import Badge from '../components/ui/Badge.jsx';
 import EmptyState from '../components/ui/EmptyState.jsx';
+import Input from '../components/ui/Input.jsx';
+import PageHeader from '../components/ui/PageHeader.jsx';
+import SegmentedTabs from '../components/ui/SegmentedTabs.jsx';
+import DataTable from '../components/ui/DataTable.jsx';
 import {
   BriefcaseIcon,
   PlusIcon,
@@ -80,14 +84,10 @@ export default function Positions() {
   return (
     <div className="positions-page">
       {/* Page Header */}
-      <div className="positions-header">
-        <div>
-          <h1 className="positions-title">Positions</h1>
-          <p className="positions-subtitle">
-            Manage open roles, screening criteria, and live candidate interview links.
-          </p>
-        </div>
-        <div className="positions-header__actions">
+      <PageHeader
+        title="Positions"
+        subtitle="Manage open roles, screening criteria, and live candidate interview links."
+        actions={
           <Button
             id="create-position-btn"
             variant="primary"
@@ -96,16 +96,16 @@ export default function Positions() {
           >
             New Position
           </Button>
-        </div>
-      </div>
+        }
+      />
 
       {/* Toolbar: Search + Filter Tabs */}
       <div className="positions-toolbar">
         <div className="positions-search-wrapper">
-          <input
+          <Input
             id="positions-search-input"
             type="search"
-            className="positions-search-input input"
+            className="positions-search-input"
             placeholder="Search positions by title or department..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -113,38 +113,17 @@ export default function Positions() {
           />
         </div>
 
-        <div className="positions-filter-tabs" role="tablist" aria-label="Filter positions by status">
-          <button
-            type="button"
-            className={`filter-tab ${statusFilter === 'all' ? 'filter-tab--active' : ''}`}
-            onClick={() => setStatusFilter('all')}
-          >
-            All ({jobs.length})
-          </button>
-          <button
-            type="button"
-            className={`filter-tab ${statusFilter === 'active' ? 'filter-tab--active' : ''}`}
-            onClick={() => setStatusFilter('active')}
-          >
-            Active ({activeCount})
-          </button>
-          <button
-            type="button"
-            className={`filter-tab ${statusFilter === 'draft' ? 'filter-tab--active' : ''}`}
-            onClick={() => setStatusFilter('draft')}
-          >
-            Drafts ({draftCount})
-          </button>
-          {closedCount > 0 && (
-            <button
-              type="button"
-            className={`filter-tab ${statusFilter === 'closed' ? 'filter-tab--active' : ''}`}
-            onClick={() => setStatusFilter('closed')}
-            >
-              Closed ({closedCount})
-            </button>
-          )}
-        </div>
+        <SegmentedTabs
+          label="Filter positions by status"
+          value={statusFilter}
+          onChange={setStatusFilter}
+          items={[
+            { value: 'all', label: `All (${jobs.length})` },
+            { value: 'active', label: `Active (${activeCount})` },
+            { value: 'draft', label: `Drafts (${draftCount})` },
+            ...(closedCount > 0 ? [{ value: 'closed', label: `Closed (${closedCount})` }] : []),
+          ]}
+        />
       </div>
 
       {/* Table or Empty State */}
@@ -166,7 +145,7 @@ export default function Positions() {
           }
         />
       ) : (
-        <div className="positions-table-container card">
+        <DataTable label="Positions directory">
           <table className="positions-table" aria-label="Positions directory">
             <thead>
               <tr>
@@ -198,8 +177,8 @@ export default function Positions() {
                   }
                 }
 
-                let badgeVariant = 'draft';
-                if (job.status === 'active') badgeVariant = 'active';
+                let badgeVariant = 'neutral';
+                if (job.status === 'active') badgeVariant = 'success';
                 else if (job.status === 'closed') badgeVariant = 'warning';
 
                 return (
@@ -215,7 +194,7 @@ export default function Positions() {
 
                     <td>
                       <Badge variant={badgeVariant} size="sm">
-                        {job.status ? job.status.toUpperCase() : 'DRAFT'}
+                        {job.status === 'closed' && job.closedReason === 'filled' ? 'Filled' : job.status === 'active' ? 'Active' : job.status === 'closed' ? 'Closed' : 'Draft'}
                       </Badge>
                     </td>
 
@@ -273,7 +252,7 @@ export default function Positions() {
               })}
             </tbody>
           </table>
-        </div>
+        </DataTable>
       )}
     </div>
   );

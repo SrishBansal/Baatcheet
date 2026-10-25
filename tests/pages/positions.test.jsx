@@ -93,13 +93,13 @@ describe('Positions Page Rendering (Checkpoint 6)', () => {
 
     // Job rows
     expect(html).toContain('Cloud Security Architect');
-    expect(html).toContain('ACTIVE');
+    expect(html).toContain('Active');
     expect(html).toMatch(/2.*question/);
     expect(html).toContain('1</strong> completed');
     expect(html).toContain('Interview'); // Interview action available for active job with questions
 
     expect(html).toContain('Growth Product Manager');
-    expect(html).toContain('DRAFT');
+    expect(html).toContain('Draft');
     expect(html).toContain('Configure');
   });
 });

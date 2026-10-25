@@ -20,4 +20,14 @@ describe('GeminiReport', () => {
     expect(html).toContain('Answers were transcribed by speech recognition and may contain errors.');
     expect(html).toContain('Typed answers present.');
   });
+
+  it('labels interviewer and named candidate turns from the stored turn shape', () => {
+    const html = renderToString(<GeminiReport analysis={{ summary: 'Summary' }} candidateName="Avery Chen" turns={[{
+      text: 'Hello, I am Baatcheet.', answer: { finalText: 'Nice to meet you.' },
+    }]} />);
+    expect(html).toContain('Interviewer');
+    expect(html).toContain('Avery Chen');
+    expect(html).toContain('Hello, I am Baatcheet.');
+    expect(html).toContain('Nice to meet you.');
+  });
 });

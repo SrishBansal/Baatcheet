@@ -207,12 +207,14 @@ describe('Phase 3: Interview Engine (nextTurn integration)', () => {
       };
     });
 
+    const onError = vi.fn();
     const controller = new InterviewController({
       job: sampleJob,
       speechRecognizer: mockRecognizer,
       speechSynthesizer: mockSynthesizer,
       capabilities,
       nextTurn: mockNextTurn,
+      onError,
     });
 
     controller.grantConsent();
@@ -221,6 +223,7 @@ describe('Phase 3: Interview Engine (nextTurn integration)', () => {
     // Stay in room, show error
     expect(controller.engineError).toBe('gemini_rate_limit');
     expect(controller.getSessionRecord().turns.length).toBe(0);
+    expect(onError).not.toHaveBeenCalled();
 
     // Call retryTurn
     shouldFail = false;

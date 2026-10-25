@@ -31,6 +31,12 @@ export async function health() {
   return res.json();
 }
 
+export function healthLabel(result) {
+  if (result?.error) return 'Server not reachable';
+  if (result?.geminiConfigured) return `AI: Gemini connected (${result.model || 'Gemini'})`;
+  return 'AI: NOT configured';
+}
+
 /** POST /api/job */
 export function importJob(body) {
   return call('/api/job', body);

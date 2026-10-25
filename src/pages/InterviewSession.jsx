@@ -12,8 +12,9 @@ import {
   XIcon,
 } from '../components/ui/Icons.jsx';
 import './InterviewSession.css';
-import { health } from '../data/engineApi.js';
+import { health, healthLabel } from '../data/engineApi.js';
 import { engineErrorMessage } from '../utils/engineError.js';
+import Banner from '../components/ui/Banner.jsx';
 
 export default function InterviewSession() {
   const { jobId } = useParams();
@@ -34,7 +35,7 @@ export default function InterviewSession() {
       setJob(loadedJob);
     }
   }, [jobId]);
-  useEffect(() => { health().then(setEngineHealth).catch(() => setEngineHealth({ geminiConfigured: false })); }, []);
+  useEffect(() => { health().then(setEngineHealth).catch(() => setEngineHealth({ error: true })); }, []);
 
   // Compute a stable interviewId once per component mount.
   // IMPORTANT: Do NOT use Date.now() inline in the options object passed to useInterviewSession.
@@ -293,7 +294,7 @@ export default function InterviewSession() {
               alignItems: 'center',
             }}
           >
-            {engineHealth?.geminiConfigured ? `AI: Gemini connected (${engineHealth.model})` : 'AI: NOT configured'}
+            {healthLabel(engineHealth)}
           </span>
 
           {session.engineError ? (
@@ -385,17 +386,16 @@ export default function InterviewSession() {
         )}
 
         {session.engineError && (
-          <div className="alert alert--danger engine-error-alert" role="alert" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', margin: '0.75rem 0' }}>
-            <span>{engineErrorMessage(session.engineError)} <small style={{ color: '#64748b' }}>{session.engineError}</small></span>
-            <Button
+          <Banner tone="error" actions={<Button
               id="retry-turn-btn"
               variant="secondary"
               size="sm"
               onClick={() => session.retryTurn()}
             >
               Retry
-            </Button>
-          </div>
+            </Button>}>
+            {engineErrorMessage(session.engineError)} <small>{session.engineError}</small>
+          </Banner>
         )}
 
         <div className="active-question-card">
@@ -587,7 +587,7 @@ export default function InterviewSession() {
                   className={`drawer-turn drawer-turn--${turn.role}`}
                 >
                   <span className="drawer-turn__role">
-                    {turn.role === 'interviewer' ? 'Baatcheet' : 'You'}
+                    {turn.role === 'interviewer' ? 'Interviewer' : session.sessionRecord?.candidate?.name || 'Candidate'}
                   </span>
                   <p className="drawer-turn__text">
                     {turn.text || turn.recognizedText || (turn.skipped ? '[Question Skipped]' : '')}

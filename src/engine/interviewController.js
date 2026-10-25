@@ -436,9 +436,6 @@ export class InterviewController {
       }
       this.isSubmitting = false;
       this.engineError = err?.message || 'server_error';
-      if (this.onError) {
-        this.onError(`Interviewer unavailable: ${this.engineError}`);
-      }
       if (this.onStateChange) {
         this.onStateChange(this.stateMachine.getState(), this.stateMachine.getState(), {});
       }

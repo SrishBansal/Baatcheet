@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { HomeIcon, BriefcaseIcon, ClipboardIcon, MenuIcon } from '../ui/Icons.jsx';
-import { health } from '../../data/engineApi.js';
+import { health, healthLabel } from '../../data/engineApi.js';
 
 /**
  * Application shell with sidebar navigation, header, and content area.
@@ -102,7 +102,7 @@ export default function AppShell() {
 
         <div className="app-sidebar__footer">
           <span className="app-sidebar__version">Recruiting workspace</span>
-          <span className="ai-status-chip app-sidebar__ai-status">{ai?.error ? 'Server not reachable' : ai?.geminiConfigured ? `AI: Gemini connected (${ai.model || 'Gemini'})` : 'AI: NOT configured'}</span>
+          <span className="ai-status-chip app-sidebar__ai-status">{healthLabel(ai)}</span>
         </div>
       </aside>
 
