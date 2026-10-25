@@ -10,6 +10,9 @@
  * - Explicit consent is required before any audio capture or playback starts.
  * - Duplicate submissions and duplicate question advancements are guarded.
  * - Manual text input fallback is seamlessly integrated.
+ * - Voice-turn endpointing (Checkpoint 2): 2 s of post-speech silence auto-submits
+ *   the accumulated answer. A monotonic turn token ensures stale timers never fire
+ *   against a subsequent question's turn.
  */
 
 import { InterviewStateMachine, InterviewState, InterviewEvent } from './stateMachine.js';
@@ -18,6 +21,9 @@ import { InterviewEventLog, EventType } from './eventLog.js';
 import { BrowserSpeechRecognizer } from '../voice/speechRecognition.js';
 import { BrowserSpeechSynthesizer } from '../voice/speechSynthesis.js';
 import { detectCapabilities } from '../voice/capabilities.js';
+import { createSessionRecord, createTurn, sessionStore, SessionStatus } from '../data/sessions.js';
+import { DeterministicTranscriptProvider, runSessionAnalysis } from '../analysis/provider.js';
+import { VoiceTurnEndpointer } from './endpointing.js';
 
 export class InterviewController {
   /**
@@ -68,6 +74,33 @@ export class InterviewController {
     this.isAdvancing = false;
     this.isDestroyed = false;
 
+    // Voice-turn endpointer (Checkpoint 2)
+    this._endpointer = new VoiceTurnEndpointer({
+      silenceMs: options.silenceMs !== undefined ? options.silenceMs : 2000,
+      minAnswerMs: options.minAnswerMs !== undefined ? options.minAnswerMs : 400,
+      onSilenceTimeout: this._handleSilenceTimeout.bind(this),
+    });
+
+    // Session persistence & analysis abstraction
+    this.sessionStore = options.sessionStore || sessionStore;
+    this.analysisProvider = options.analysisProvider || new DeterministicTranscriptProvider();
+    this.sessionRecord = null;
+    this.currentTurn = null;
+
+    if (this.interviewId) {
+      try {
+        const existing = this.sessionStore.getById(this.interviewId);
+        if (existing) {
+          this.sessionRecord = existing;
+          if (this.sessionRecord.turns && this.sessionRecord.turns.length > 0) {
+            this.currentTurn = this.sessionRecord.turns[this.sessionRecord.turns.length - 1];
+          }
+        }
+      } catch {
+        // Ignore unreadable session during initialization; fresh session will be created
+      }
+    }
+
     // Live transcription state
     this.interimText = '';
     this.currentAnswerDraft = '';
@@ -87,6 +120,34 @@ export class InterviewController {
         this.onStateChange(state, prev, ctx);
       }
     });
+  }
+
+  _persistSession() {
+    if (!this.sessionRecord) return;
+    try {
+      this.sessionStore.save(this.sessionRecord);
+    } catch (err) {
+      console.error('[InterviewController] Failed to persist session:', err);
+    }
+  }
+
+  async _executeAnalysis() {
+    if (!this.sessionRecord) return;
+    try {
+      const result = await runSessionAnalysis(this.sessionRecord, this.analysisProvider);
+      this.sessionRecord.analysis = result;
+      this._persistSession();
+    } catch (err) {
+      this.sessionRecord.analysis = {
+        status: 'failed',
+        providerId: this.analysisProvider.providerId || 'unknown',
+        providerKind: this.analysisProvider.providerKind || 'deterministic',
+        error: err.message || 'Analysis failed',
+        generatedAt: new Date().toISOString(),
+        requirements: [],
+      };
+      this._persistSession();
+    }
   }
 
   /* ----------------------------------------------------------------
@@ -119,6 +180,10 @@ export class InterviewController {
 
   getInputMode() {
     return this.inputMode;
+  }
+
+  getSessionRecord() {
+    return this.sessionRecord;
   }
 
   /* ----------------------------------------------------------------
@@ -165,6 +230,14 @@ export class InterviewController {
       totalQuestions: this.questionManager.getTotalCount(),
     });
 
+    if (!this.sessionRecord) {
+      this.sessionRecord = createSessionRecord({
+        id: this.interviewId || `session-${this.job.id}-${Date.now()}`,
+        job: this.job,
+      });
+      this._persistSession();
+    }
+
     this.stateMachine.transition(InterviewEvent.START_INTERVIEW);
     this._presentCurrentQuestion();
   }
@@ -186,6 +259,9 @@ export class InterviewController {
     this.currentAnswerDraft = '';
     this.isSubmitting = false;
 
+    // Mark synthesis as playing so endpointer discards any stale mic activity
+    this._endpointer.setSynthPlaying();
+
     // Log question presentation turn in transcript
     this.eventLog.logQuestion({
       questionId: prompt.questionId,
@@ -193,6 +269,35 @@ export class InterviewController {
       isFollowUp: prompt.isFollowUp,
       category: this.questionManager.getCurrentQuestion()?.category || 'general',
     });
+
+    if (this.sessionRecord) {
+      const isFollowUp = Boolean(prompt.isFollowUp);
+      if (isFollowUp && (!prompt.rationale || !prompt.rationale.trim())) {
+        throw new Error('[InterviewController] Rationale is required for follow-up turns.');
+      }
+
+      const isSamePrompt =
+        this.currentTurn &&
+        this.currentTurn.questionId === prompt.questionId &&
+        this.currentTurn.kind === (isFollowUp ? 'followup' : 'question') &&
+        !this.currentTurn.answer &&
+        !this.currentTurn.skipped;
+
+      if (!isSamePrompt) {
+        const turn = createTurn({
+          id: `turn-${this.sessionRecord.turns.length + 1}-${Date.now()}`,
+          questionId: prompt.questionId || 'unknown',
+          kind: isFollowUp ? 'followup' : 'question',
+          text: prompt.text || '',
+          rationale: isFollowUp ? prompt.rationale : undefined,
+          askedAt: new Date().toISOString(),
+          skipped: false,
+        });
+        this.currentTurn = turn;
+        this.sessionRecord.turns.push(turn);
+        this._persistSession();
+      }
+    }
 
     if (this.onTranscriptUpdate) {
       this.onTranscriptUpdate(this.eventLog.getTranscript());
@@ -203,6 +308,7 @@ export class InterviewController {
       this.synthesizer.speak(prompt.text, {
         onStart: () => {},
         onEnd: () => {
+          this._endpointer.setSynthFinished();
           this._handleQuestionPlaybackFinished();
         },
         onError: (err) => {
@@ -213,6 +319,7 @@ export class InterviewController {
           }
 
           // For genuine, unexpected speech synthesis errors (e.g. audio device failure, speech crash):
+          this._endpointer.setSynthFinished();
           this.speechErrorMessage = 'Audio playback was unavailable. You can read the question text and answer.';
           if (this.onError) {
             this.onError(this.speechErrorMessage);
@@ -224,6 +331,7 @@ export class InterviewController {
       });
     } else {
       // If synthesis is unsupported, present visually and transition immediately
+      this._endpointer.setSynthFinished();
       this._handleQuestionPlaybackFinished();
     }
   }
@@ -240,6 +348,7 @@ export class InterviewController {
 
       // Begin listening if in voice mode and recognition is available
       if (this.inputMode === 'voice' && this.recognizer.isSupported()) {
+        this._endpointer.startTurn();
         this.recognizer.start();
       }
     } else if (this.stateMachine.getState() === InterviewState.FOLLOW_UP) {
@@ -247,6 +356,7 @@ export class InterviewController {
       this.questionEndTime = Date.now();
 
       if (this.inputMode === 'voice' && this.recognizer.isSupported()) {
+        this._endpointer.startTurn();
         this.recognizer.start();
       }
     }
@@ -263,6 +373,7 @@ export class InterviewController {
       currentState === InterviewState.FOLLOW_UP
     ) {
       this.synthesizer.stop();
+      this._endpointer.setSynthFinished();
       this.eventLog.logEvent(EventType.CANDIDATE_INTERRUPTED, {
         questionId: this.questionManager.getActivePrompt()?.questionId,
         state: currentState,
@@ -272,6 +383,7 @@ export class InterviewController {
 
       // Begin listening immediately upon candidate barge-in if in voice mode
       if (this.inputMode === 'voice' && this.recognizer.isSupported()) {
+        this._endpointer.startTurn();
         this.recognizer.start();
       }
     }
@@ -321,6 +433,16 @@ export class InterviewController {
       latencyMs,
     });
 
+    if (this.currentTurn && this.sessionRecord) {
+      this.currentTurn.answer = {
+        finalText: answerText,
+        answeredAt: new Date().toISOString(),
+        inputMode: this.inputMode || 'text',
+      };
+      this.currentTurn.skipped = false;
+      this._persistSession();
+    }
+
     this.currentAnswerDraft = '';
     this.interimText = '';
 
@@ -350,6 +472,7 @@ export class InterviewController {
     }
 
     this.synthesizer.stop();
+    this._endpointer.cancelTurn();
     if (this.recognizer.isListening) {
       this.recognizer.stop();
     }
@@ -360,6 +483,11 @@ export class InterviewController {
       isFollowUp: currentPrompt?.isFollowUp || false,
       reason,
     });
+
+    if (this.currentTurn && this.sessionRecord) {
+      this.currentTurn.skipped = true;
+      this._persistSession();
+    }
 
     if (this.onTranscriptUpdate) {
       this.onTranscriptUpdate(this.eventLog.getTranscript());
@@ -422,6 +550,13 @@ export class InterviewController {
       completedAt: new Date().toISOString(),
     });
 
+    if (this.sessionRecord) {
+      this.sessionRecord.status = SessionStatus.COMPLETED;
+      this.sessionRecord.endedAt = new Date().toISOString();
+      this._persistSession();
+      this._executeAnalysis();
+    }
+
     this.isSubmitting = false;
     this.isAdvancing = false;
     this._stopAllAudio();
@@ -479,6 +614,7 @@ export class InterviewController {
     }
 
     this._stopAllAudio();
+    this._endpointer.cancelTurn();
     this.eventLog.logEvent(EventType.INTERVIEW_PAUSED);
     this.stateMachine.transition(InterviewEvent.PAUSE);
     return true;
@@ -522,6 +658,14 @@ export class InterviewController {
     this.eventLog.logEvent(EventType.INTERVIEW_ABORTED, {
       stoppedAtQuestion: this.questionManager.getCurrentIndex(),
     });
+
+    if (this.sessionRecord) {
+      this.sessionRecord.status = SessionStatus.ABORTED;
+      this.sessionRecord.endedAt = new Date().toISOString();
+      this._persistSession();
+      this._executeAnalysis();
+    }
+
     this.stateMachine.transition(InterviewEvent.ABORT);
   }
 
@@ -567,8 +711,8 @@ export class InterviewController {
       this.onInterimSpeech(text);
     }
 
-    // If candidate has completed a final phrase and continuous is off or auto-submit is desired,
-    // we keep the transcript updated in draft for user submission
+    // Feed result into endpointer to reset silence countdown
+    this._endpointer.onRecognitionResult({ text, isFinal });
   }
 
   _handleRecognitionError(err) {
@@ -588,6 +732,32 @@ export class InterviewController {
 
   _handleRecognitionEnd() {
     this.interimText = '';
+    // Notify endpointer: recognition ended; may auto-fire silence timeout if
+    // sufficient draft text exists.
+    this._endpointer.onRecognitionEnd(this.currentAnswerDraft);
+  }
+
+  /**
+   * Called by the endpointer when post-speech silence duration has elapsed.
+   * Auto-submits the accumulated draft answer, or if no draft exists, skips.
+   * Guard: only acts when state is LISTENING and not already submitting.
+   */
+  _handleSilenceTimeout() {
+    if (this.isDestroyed) return;
+    if (this.stateMachine.getState() !== InterviewState.LISTENING) return;
+    if (this.isSubmitting) return;
+
+    const draft = (this.currentAnswerDraft || '').trim();
+    if (draft) {
+      // Auto-submit the voice answer
+      this.eventLog.logEvent(EventType.CANDIDATE_ANSWERED_AUTO, {
+        questionId: this.questionManager.getActivePrompt()?.questionId,
+        trigger: 'silence_timeout',
+      });
+      this.submitAnswer(draft);
+    }
+    // If no draft: do nothing — candidate may still be thinking.
+    // The manual Submit / Skip buttons remain available.
   }
 
   _stopAllAudio() {
@@ -605,6 +775,7 @@ export class InterviewController {
   destroy() {
     this.isDestroyed = true;
     this._stopAllAudio();
+    this._endpointer.destroy();
 
     if (this._unsubscribeSM) {
       this._unsubscribeSM();
