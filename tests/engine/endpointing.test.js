@@ -5,8 +5,14 @@
  * so tests run synchronously without real delays.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { VoiceTurnEndpointer } from '../../src/engine/endpointing.js';
+import {
+  VoiceTurnEndpointer,
+  BASE_SILENCE_MS,
+  EXTENDED_SILENCE_MS,
+  MAX_WAIT_MS,
+  NO_SPEECH_REPROMPT_MS,
+  computeSilenceMs,
+} from '../../src/engine/endpointing.js';
 
 /**
  * Minimal fake timer environment: stores pending timers and lets tests
@@ -232,6 +238,77 @@ describe('CHECKPOINT 2: VoiceTurnEndpointer', () => {
       ep.onRecognitionResult({ text: 'hello', isFinal: false });
       timers.tick(3000);
       expect(onSilenceTimeout).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('P0.1: Constants and dynamic silence / reprompt', () => {
+    it('exports required constants with exact values', () => {
+      expect(BASE_SILENCE_MS).toBe(2500);
+      expect(EXTENDED_SILENCE_MS).toBe(4500);
+      expect(MAX_WAIT_MS).toBe(8000);
+      expect(NO_SPEECH_REPROMPT_MS).toBe(10000);
+    });
+
+    it('computeSilenceMs adjusts silence duration based on word count and trailing connectors', () => {
+      // < 8 words -> extended
+      expect(computeSilenceMs('one two three four five six seven')).toBe(EXTENDED_SILENCE_MS);
+      // >= 8 words normal -> base
+      expect(computeSilenceMs('one two three four five six seven eight nine.')).toBe(BASE_SILENCE_MS);
+      // >= 8 words ending in connector -> extended
+      expect(computeSilenceMs('one two three four five six seven eight and')).toBe(EXTENDED_SILENCE_MS);
+      expect(computeSilenceMs('one two three four five six seven eight but')).toBe(EXTENDED_SILENCE_MS);
+      expect(computeSilenceMs('one two three four five six seven eight because')).toBe(EXTENDED_SILENCE_MS);
+      expect(computeSilenceMs('one two three four five six seven eight so')).toBe(EXTENDED_SILENCE_MS);
+      expect(computeSilenceMs('one two three four five six seven eight um')).toBe(EXTENDED_SILENCE_MS);
+      expect(computeSilenceMs('one two three four five six seven eight uh')).toBe(EXTENDED_SILENCE_MS);
+      // ending in comma -> extended
+      expect(computeSilenceMs('one two three four five six seven eight,')).toBe(EXTENDED_SILENCE_MS);
+    });
+
+    it('VoiceTurnEndpointer uses dynamic silence thresholds with default options', () => {
+      const onTimeout = vi.fn();
+      const dynamicEp = new VoiceTurnEndpointer({
+        onSilenceTimeout: onTimeout,
+        setTimeout: timers.fakeSetTimeout,
+        clearTimeout: timers.fakeClearTimeout,
+      });
+
+      // Short response: < 8 words, waits EXTENDED_SILENCE_MS (4500)
+      dynamicEp.startTurn();
+      dynamicEp.onRecognitionResult({ text: 'short reply', isFinal: false });
+      timers.tick(2500);
+      expect(onTimeout).not.toHaveBeenCalled();
+      timers.tick(2000); // 4500 total
+      expect(onTimeout).toHaveBeenCalledTimes(1);
+
+      // Long response: >= 8 words, triggers at BASE_SILENCE_MS (2500)
+      onTimeout.mockClear();
+      dynamicEp.startTurn();
+      dynamicEp.onRecognitionResult({
+        text: 'This is a complete sentence with more than eight words in it.',
+        isFinal: false,
+      });
+      timers.tick(2500);
+      expect(onTimeout).toHaveBeenCalledTimes(1);
+    });
+
+    it('VoiceTurnEndpointer fires onNoSpeechReprompt at NO_SPEECH_REPROMPT_MS when no speech occurs', () => {
+      const onReprompt = vi.fn();
+      const repromptEp = new VoiceTurnEndpointer({
+        onNoSpeechReprompt: onReprompt,
+        setTimeout: timers.fakeSetTimeout,
+        clearTimeout: timers.fakeClearTimeout,
+      });
+
+      repromptEp.startTurn();
+      timers.tick(5000);
+      expect(onReprompt).not.toHaveBeenCalled();
+
+      timers.tick(5000); // 10000ms total
+      expect(onReprompt).toHaveBeenCalledWith({
+        repromptCount: 1,
+        offerTextInput: true,
+      });
     });
   });
 });

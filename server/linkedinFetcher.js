@@ -55,6 +55,9 @@ export async function fetchLinkedInJobHtml(targetUrl) {
   if (httpStatus === 401 || httpStatus === 403) {
     throw new Error(`LinkedIn access denied (HTTP ${httpStatus}). Authentication required.`);
   }
+  if (httpStatus < 200 || httpStatus >= 300) {
+    throw new Error(`LinkedIn returned HTTP ${httpStatus}${httpStatus === 404 ? ' (Not Found).' : '.'}`);
+  }
 
   // Check if final URL redirected to an authwall or login page
   if (

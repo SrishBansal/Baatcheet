@@ -5,20 +5,57 @@
  * Each listening turn is identified by a monotonically increasing token; stale
  * timer callbacks from previous turns are silently discarded.
  *
- * Design principles (ADR-023, ADR-024):
- * - Zero external dependencies — uses standard setTimeout/clearTimeout.
- * - Deterministic: timeout fires exactly once per active turn.
- * - Safe: canceling a finished or already-canceled turn is a no-op.
- * - Testable: all timing functions are injectable via options.
+ * Constants (P0):
+ * - BASE_SILENCE_MS = 2500
+ * - EXTENDED_SILENCE_MS = 4500 (answers <8 words or ending in and/so/but/because/um/uh/comma)
+ * - MAX_WAIT_MS = 8000
+ * - NO_SPEECH_REPROMPT_MS = 10000 (re-prompt once, then offer text input)
  */
+
+export const BASE_SILENCE_MS = 2500;
+export const EXTENDED_SILENCE_MS = 4500;
+export const MAX_WAIT_MS = 8000;
+export const NO_SPEECH_REPROMPT_MS = 10000;
+
+const TRAILING_CONNECTOR_REGEX = /^(and|so|but|because|um|uh)$/i;
+
+/**
+ * Determine dynamic silence duration based on answer length and completion syntax.
+ * @param {string} text
+ * @param {number} [baseMs=BASE_SILENCE_MS]
+ * @param {number} [extendedMs=EXTENDED_SILENCE_MS]
+ * @returns {number}
+ */
+export function computeSilenceMs(text, baseMs = BASE_SILENCE_MS, extendedMs = EXTENDED_SILENCE_MS) {
+  if (!text || typeof text !== 'string') return baseMs;
+  const trimmed = text.trim();
+  if (!trimmed) return baseMs;
+
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  if (words.length < 8) {
+    return extendedMs;
+  }
+
+  const lastWord = words[words.length - 1].replace(/[.,?!]+$/, '').toLowerCase();
+  if (TRAILING_CONNECTOR_REGEX.test(lastWord) || trimmed.endsWith(',')) {
+    return extendedMs;
+  }
+
+  return baseMs;
+}
 
 /**
  * @typedef {object} EndpointingOptions
- * @property {number}   [silenceMs=2000]     Milliseconds of silence before firing onSilenceTimeout.
+ * @property {number}   [baseSilenceMs=BASE_SILENCE_MS]
+ * @property {number}   [extendedSilenceMs=EXTENDED_SILENCE_MS]
+ * @property {number}   [maxWaitMs=MAX_WAIT_MS]
+ * @property {number}   [noSpeechRepromptMs=NO_SPEECH_REPROMPT_MS]
+ * @property {number}   [silenceMs]          Legacy fallback for baseSilenceMs
  * @property {number}   [minAnswerMs=400]    Minimum ms of speech before auto-submit is allowed.
- * @property {function} [onSilenceTimeout]   Called with no arguments when silence threshold is reached.
- * @property {function} [setTimeout]        Injectable for testing (defaults to globalThis.setTimeout).
- * @property {function} [clearTimeout]      Injectable for testing (defaults to globalThis.clearTimeout).
+ * @property {function} [onSilenceTimeout]   Called when silence threshold is reached.
+ * @property {function} [onNoSpeechReprompt] Called when no speech detected within reprompt window.
+ * @property {function} [setTimeout]        Injectable for testing.
+ * @property {function} [clearTimeout]      Injectable for testing.
  */
 
 export class VoiceTurnEndpointer {
@@ -26,174 +63,128 @@ export class VoiceTurnEndpointer {
    * @param {EndpointingOptions} [options]
    */
   constructor(options = {}) {
-    this._silenceMs = options.silenceMs !== undefined ? options.silenceMs : 2000;
+    this._baseSilenceMs = options.baseSilenceMs !== undefined
+      ? options.baseSilenceMs
+      : (options.silenceMs !== undefined ? options.silenceMs : BASE_SILENCE_MS);
+    this._extendedSilenceMs = options.extendedSilenceMs !== undefined
+      ? options.extendedSilenceMs
+      : (options.silenceMs !== undefined ? options.silenceMs : EXTENDED_SILENCE_MS);
+    this._maxWaitMs = options.maxWaitMs !== undefined ? options.maxWaitMs : MAX_WAIT_MS;
+    this._noSpeechRepromptMs = options.noSpeechRepromptMs !== undefined
+      ? options.noSpeechRepromptMs
+      : NO_SPEECH_REPROMPT_MS;
+
     this._minAnswerMs = options.minAnswerMs !== undefined ? options.minAnswerMs : 400;
     this._onSilenceTimeout = options.onSilenceTimeout || null;
+    this._onNoSpeechReprompt = options.onNoSpeechReprompt || null;
 
-    // Injectable timing functions (facilitate deterministic testing)
     this._setTimeout = options.setTimeout || globalThis.setTimeout.bind(globalThis);
     this._clearTimeout = options.clearTimeout || globalThis.clearTimeout.bind(globalThis);
 
-    // Turn token: monotonically increasing per startTurn call
     this._currentToken = 0;
     this._timerId = null;
+    this._noSpeechTimerId = null;
+    this._repromptCount = 0;
 
-    // Single-flight lock: prevents concurrent mic-start and synth-speak calls
     this._micActive = false;
     this._synthActive = false;
-
-    // When current turn's speech started (first interim result received)
     this._speechStartedAt = null;
     this._isDestroyed = false;
   }
 
-  /* ----------------------------------------------------------------
-     Turn lifecycle
-     ---------------------------------------------------------------- */
-
-  /**
-   * Begin a new listening turn.
-   * Cancels any previous turn's pending timer and issues a fresh turn token.
-   *
-   * @returns {number} The new turn token. Callers may store it for validation.
-   */
   startTurn() {
     if (this._isDestroyed) return 0;
     this._cancelTimer();
+    this._cancelNoSpeechTimer();
     this._currentToken++;
     this._speechStartedAt = null;
+    this._repromptCount = 0;
     this._micActive = true;
     this._synthActive = false;
+    this._armNoSpeechTimer();
     return this._currentToken;
   }
 
-  /**
-   * Cancel the current turn's pending silence timer without firing the callback.
-   * Safe to call multiple times or when no turn is active.
-   */
   cancelTurn() {
     this._cancelTimer();
+    this._cancelNoSpeechTimer();
     this._micActive = false;
     this._speechStartedAt = null;
   }
 
-  /**
-   * Notify the endpointer that a recognition result (interim or final) arrived.
-   * Resets the silence countdown. Marks speech-start time on first call per turn.
-   *
-   * @param {object}  result
-   * @param {string}  result.text      Current draft text (interim + final).
-   * @param {boolean} result.isFinal   Whether this segment is finalized.
-   */
   onRecognitionResult(result) {
     if (this._isDestroyed || !this._micActive) return;
 
     if (!this._speechStartedAt) {
       this._speechStartedAt = Date.now();
+      this._cancelNoSpeechTimer();
     }
 
-    // Reset silence countdown on every result arrival
     this._cancelTimer();
 
-    // Only arm the silence timer when there is actual text to submit
     if (result && result.text && result.text.trim()) {
-      this._armTimer();
+      const calculatedMs = computeSilenceMs(result.text, this._baseSilenceMs, this._extendedSilenceMs);
+      const effectiveMs = Math.min(calculatedMs, this._maxWaitMs);
+      this._armTimer(effectiveMs);
     }
   }
 
-  /**
-   * Notify the endpointer that the microphone stream ended (recognition's onend fired).
-   * If draft text exists and minimum speech duration has elapsed, fire timeout immediately.
-   *
-   * @param {string} draftText Current answer draft accumulated so far.
-   */
   onRecognitionEnd(draftText) {
     if (this._isDestroyed) return;
     this._cancelTimer();
+    this._cancelNoSpeechTimer();
     this._micActive = false;
 
     if (!draftText || !draftText.trim()) return;
 
     const elapsed = this._speechStartedAt ? Date.now() - this._speechStartedAt : 0;
     if (elapsed >= this._minAnswerMs) {
-      // Immediately fire: recognition ended with a completed answer
       this._fireSilenceTimeout(this._currentToken);
     }
   }
 
-  /**
-   * Check whether the accumulated draft meets the minimum answer duration.
-   * @returns {boolean}
-   */
   hasMinimumSpeech() {
     if (!this._speechStartedAt) return false;
     return Date.now() - this._speechStartedAt >= this._minAnswerMs;
   }
 
-  /* ----------------------------------------------------------------
-     Single-flight lock helpers
-     ---------------------------------------------------------------- */
-
-  /**
-   * Returns true when microphone is actively capturing for the current turn.
-   * @returns {boolean}
-   */
   get isMicActive() {
     return this._micActive;
   }
 
-  /**
-   * Returns true when speech synthesis is currently playing.
-   * @returns {boolean}
-   */
   get isSynthActive() {
     return this._synthActive;
   }
 
-  /**
-   * Mark synthesis as playing. Cancels any pending turn timer because
-   * the interviewer is speaking — candidate turn has not started.
-   */
   setSynthPlaying() {
     this._synthActive = true;
     this._micActive = false;
     this._cancelTimer();
+    this._cancelNoSpeechTimer();
   }
 
-  /**
-   * Mark synthesis as finished. Does NOT automatically start mic — that is
-   * the controller's responsibility to maintain consistent state.
-   */
   setSynthFinished() {
     this._synthActive = false;
   }
 
-  /* ----------------------------------------------------------------
-     Destroy
-     ---------------------------------------------------------------- */
-
-  /**
-   * Release all resources. After destroy, no callbacks will fire.
-   */
   destroy() {
     this._isDestroyed = true;
     this._cancelTimer();
+    this._cancelNoSpeechTimer();
     this._micActive = false;
     this._synthActive = false;
     this._onSilenceTimeout = null;
+    this._onNoSpeechReprompt = null;
   }
 
-  /* ----------------------------------------------------------------
-     Private helpers
-     ---------------------------------------------------------------- */
-
-  _armTimer() {
+  _armTimer(delayMs) {
     if (this._isDestroyed) return;
     const token = this._currentToken;
+    const ms = typeof delayMs === 'number' ? delayMs : this._baseSilenceMs;
     this._timerId = this._setTimeout(() => {
       this._timerId = null;
       this._fireSilenceTimeout(token);
-    }, this._silenceMs);
+    }, ms);
   }
 
   _cancelTimer() {
@@ -203,15 +194,32 @@ export class VoiceTurnEndpointer {
     }
   }
 
-  /**
-   * Fire the silence timeout callback only if the token matches the current turn.
-   * Stale callbacks from previous turns are silently discarded.
-   *
-   * @param {number} token
-   */
+  _armNoSpeechTimer() {
+    if (this._isDestroyed || !this._onNoSpeechReprompt || this._noSpeechRepromptMs <= 0) return;
+    const token = this._currentToken;
+    this._noSpeechTimerId = this._setTimeout(() => {
+      this._noSpeechTimerId = null;
+      if (this._isDestroyed || token !== this._currentToken || this._speechStartedAt) return;
+      this._repromptCount++;
+      if (this._onNoSpeechReprompt) {
+        this._onNoSpeechReprompt({
+          repromptCount: this._repromptCount,
+          offerTextInput: this._repromptCount >= 1,
+        });
+      }
+    }, this._noSpeechRepromptMs);
+  }
+
+  _cancelNoSpeechTimer() {
+    if (this._noSpeechTimerId !== null) {
+      this._clearTimeout(this._noSpeechTimerId);
+      this._noSpeechTimerId = null;
+    }
+  }
+
   _fireSilenceTimeout(token) {
     if (this._isDestroyed) return;
-    if (token !== this._currentToken) return; // Stale timer from a prior turn
+    if (token !== this._currentToken) return;
     if (!this._onSilenceTimeout) return;
     this._onSilenceTimeout();
   }

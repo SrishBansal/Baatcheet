@@ -6,12 +6,14 @@
  *
  * Migration chain:
  *   v0 (unversioned prototypes) → v1: add schemaVersion field, keep data intact.
+ *   v1 → v2: add reasoning, turn.decision, turn.parentTurnId, turn.requirementIds,
+ *             analysis.contradictions.
  */
 
 import { generateId } from '../utils/id.js';
 
-export const SESSION_SCHEMA_VERSION = 1;
-const SUPPORTED_VERSIONS = new Set([1]);
+export const SESSION_SCHEMA_VERSION = 2;
+const SUPPORTED_VERSIONS = new Set([1, 2]);
 
 const STORAGE_KEY = 'hirepilot:sessions';
 
@@ -88,6 +90,11 @@ export function createSessionRecord({ id, job }) {
       providerId: 'deterministic-transcript-v1',
       providerKind: 'deterministic',
       requirements: [],
+      contradictions: [],
+    },
+    reasoning: {
+      providerId: 'none',
+      providerKind: 'deterministic',
     },
   };
 }
@@ -117,6 +124,8 @@ export function validateSessionRecord(record) {
  *
  * Migration chain:
  *   v0 (undefined / prototype) → v1: stamp schemaVersion; data shape is unchanged.
+ *   v1 → v2: add reasoning, turn.decision, turn.parentTurnId, turn.requirementIds,
+ *             analysis.contradictions.
  *
  * @param {object} record
  * @returns {object} Migrated record at SESSION_SCHEMA_VERSION
@@ -126,24 +135,51 @@ export function migrateSession(record) {
     throw new Error('Cannot migrate: record is not an object.');
   }
 
-  const version = record.schemaVersion;
+  let current = record;
+  let version = current.schemaVersion;
 
   // Already current
   if (version === SESSION_SCHEMA_VERSION) {
-    return record;
+    return current;
   }
 
   // v0 → v1: unversioned prototype sessions — stamp the version, keep all data
   if (version === undefined || version === null) {
-    if (record.status && Array.isArray(record.turns)) {
-      return { ...record, schemaVersion: SESSION_SCHEMA_VERSION };
+    if (current.status && Array.isArray(current.turns)) {
+      current = { ...current, schemaVersion: 1 };
+      version = 1;
+    } else {
+      throw new Error(
+        'Cannot migrate unversioned record: missing required fields (status, turns).'
+      );
     }
-    throw new Error(
-      'Cannot migrate unversioned record: missing required fields (status, turns).'
-    );
   }
 
-  // Future versions would be handled here as additional if-branches
+  // v1 → v2: add reasoning, contradictions, and turn fields
+  if (version === 1) {
+    const migratedTurns = (current.turns || []).map((t) => ({
+      decision: null,
+      parentTurnId: null,
+      requirementIds: [],
+      ...t,
+    }));
+    const migratedAnalysis = {
+      ...current.analysis,
+      contradictions: current.analysis?.contradictions ?? [],
+    };
+    current = {
+      ...current,
+      schemaVersion: 2,
+      turns: migratedTurns,
+      analysis: migratedAnalysis,
+      reasoning: current.reasoning ?? { providerId: 'none', providerKind: 'deterministic' },
+    };
+    version = 2;
+  }
+
+  if (version === SESSION_SCHEMA_VERSION) {
+    return current;
+  }
 
   throw new Error(
     `Unsupported schema version: ${version} (expected ${SESSION_SCHEMA_VERSION}).`
@@ -194,6 +230,9 @@ export function createTurn({
     text: text.trim(),
     ...(kind === 'followup' ? { rationale: String(rationale).trim() } : {}),
     askedAt,
+    decision: null,
+    parentTurnId: null,
+    requirementIds: [],
     ...(formattedAnswer ? { answer: formattedAnswer } : {}),
     skipped: Boolean(skipped),
   };

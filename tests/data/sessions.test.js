@@ -142,4 +142,41 @@ describe('sessionStore and SessionRecord Domain Model', () => {
       /Invalid kind/
     );
   });
+
+  it('P0.3: SESSION_SCHEMA_VERSION is 2', () => {
+    expect(SESSION_SCHEMA_VERSION).toBe(2);
+  });
+
+  it('P0.3: createSessionRecord includes v2 fields (contradictions, reasoning)', () => {
+    const session = createSessionRecord({ id: 'sess-v2-check', job: mockJob });
+    expect(session.schemaVersion).toBe(2);
+    expect(Array.isArray(session.analysis.contradictions)).toBe(true);
+    expect(session.reasoning).toEqual({ providerId: 'none', providerKind: 'deterministic' });
+  });
+
+  it('P0.3: createTurn includes v2 fields (decision, parentTurnId, requirementIds)', () => {
+    const turn = createTurn({ questionId: 'q1', kind: 'question', text: 'Tell me about yourself.' });
+    expect(turn.decision).toBe(null);
+    expect(turn.parentTurnId).toBe(null);
+    expect(Array.isArray(turn.requirementIds)).toBe(true);
+  });
+
+  it('P0.3: migrateSession v1→v2 adds reasoning, contradictions, and turn fields', async () => {
+    const { migrateSession } = await import('../../src/data/sessions.js');
+    const v1Record = {
+      id: 'sess-migrate-v1',
+      jobId: 'job-1',
+      schemaVersion: 1,
+      status: 'completed',
+      turns: [{ id: 't1', questionId: 'q1', kind: 'question', text: 'Tell me...', askedAt: new Date().toISOString(), skipped: false }],
+      analysis: { status: 'not_requested', providerId: 'x', providerKind: 'deterministic', requirements: [] },
+    };
+    const migrated = migrateSession(v1Record);
+    expect(migrated.schemaVersion).toBe(2);
+    expect(Array.isArray(migrated.analysis.contradictions)).toBe(true);
+    expect(migrated.reasoning).toEqual({ providerId: 'none', providerKind: 'deterministic' });
+    expect(migrated.turns[0].decision).toBe(null);
+    expect(migrated.turns[0].parentTurnId).toBe(null);
+    expect(Array.isArray(migrated.turns[0].requirementIds)).toBe(true);
+  });
 });

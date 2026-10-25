@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { store } from '../data/store.js';
+import { sessionStore, SessionStatus } from '../data/sessions.js';
 import { useInterviewSession } from '../hooks/useInterviewSession.js';
 import Button from '../components/ui/Button.jsx';
 import Badge from '../components/ui/Badge.jsx';
@@ -21,6 +22,7 @@ export default function InterviewSession() {
   const [typedAnswer, setTypedAnswer] = useState('');
   const [isEndModalOpen, setIsEndModalOpen] = useState(false);
   const [showTranscriptDrawer, setShowTranscriptDrawer] = useState(false);
+  const [reloadInterrupted, setReloadInterrupted] = useState(false);
 
   useEffect(() => {
     const loadedJob = store.jobs.getById(jobId);
@@ -35,10 +37,46 @@ export default function InterviewSession() {
   // object literal with Date.now() produces a new value on every render, which causes the effect
   // to re-run, destroying and recreating the InterviewController on every forceUpdate() call.
   const activeSessionKey = `hirepilot:active_session:${jobId}`;
-  const interviewIdRef = React.useRef(
-    (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(activeSessionKey)) ||
-      `session-${jobId}-${Date.now()}`
-  );
+
+  // P0.4 Reload Guard: if sessionStorage holds an in_progress session with no live controller,
+  // mark it aborted immediately (before mounting the hook) and generate a new interviewId.
+  // NOTE: useRef initial value runs once; we use a lazy IIFE to compute it synchronously.
+  const reloadDetectedRef = useRef(false);
+  const interviewIdRef = useRef(null);
+  if (interviewIdRef.current === null) {
+    const freshId = `session-${jobId}-${Date.now()}`;
+    if (typeof sessionStorage !== 'undefined') {
+      const storedId = sessionStorage.getItem(activeSessionKey);
+      if (storedId) {
+        try {
+          const existing = sessionStore.getById(storedId);
+          if (existing && existing.status === SessionStatus.IN_PROGRESS) {
+            // No live controller (fresh page load) — abort the orphaned session immediately.
+            const aborted = {
+              ...existing,
+              status: SessionStatus.ABORTED,
+              abortReason: 'page_reloaded',
+              endedAt: new Date().toISOString(),
+            };
+            sessionStore.save(aborted);
+            sessionStorage.removeItem(activeSessionKey);
+            reloadDetectedRef.current = true;
+          }
+        } catch {
+          // Corrupt stored session — ignore and start fresh.
+          sessionStorage.removeItem(activeSessionKey);
+        }
+      }
+    }
+    interviewIdRef.current = freshId;
+  }
+
+  useEffect(() => {
+    if (reloadDetectedRef.current) {
+      setReloadInterrupted(true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (typeof sessionStorage !== 'undefined') {
@@ -57,6 +95,35 @@ export default function InterviewSession() {
           <Button variant="primary" onClick={() => navigate('/')}>
             Return to Dashboard
           </Button>
+        </div>
+      </div>
+    );
+  }
+  // 0.5 Reload-interrupted guard screen
+  if (reloadInterrupted && job) {
+    return (
+      <div className="interview-container">
+        <div className="interview-completion-card">
+          <h1 className="completion-title" id="reload-interrupted-heading">Interview Interrupted</h1>
+          <p className="completion-subtitle">
+            Your previous session for <strong>{job.title}</strong> was interrupted when the page was
+            reloaded. The answers you provided before the reload have been saved.
+          </p>
+          <p className="completion-subtitle">
+            To start a new session, click the button below.
+          </p>
+          <div className="completion-actions">
+            <Button
+              id="reload-interrupted-restart-btn"
+              variant="primary"
+              onClick={() => setReloadInterrupted(false)}
+            >
+              Start New Session
+            </Button>
+            <Button variant="ghost" onClick={() => navigate('/')}>
+              Return to Dashboard
+            </Button>
+          </div>
         </div>
       </div>
     );

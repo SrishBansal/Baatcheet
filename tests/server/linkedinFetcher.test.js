@@ -74,4 +74,26 @@ describe('Server-side LinkedIn Fetcher', () => {
       /timed out after/
     );
   });
+
+  it('P0.2: HTTP 404 throws without returning job data', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      status: 404,
+      url: 'https://www.linkedin.com/jobs/view/999/',
+    });
+
+    await expect(
+      fetchLinkedInJobHtml('https://www.linkedin.com/jobs/view/999/')
+    ).rejects.toThrow(/HTTP 404/);
+  });
+
+  it('P0.2: any non-2xx (e.g. 500) throws without returning job data', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      status: 500,
+      url: 'https://www.linkedin.com/jobs/view/123/',
+    });
+
+    await expect(
+      fetchLinkedInJobHtml('https://www.linkedin.com/jobs/view/123/')
+    ).rejects.toThrow(/HTTP 500/);
+  });
 });
