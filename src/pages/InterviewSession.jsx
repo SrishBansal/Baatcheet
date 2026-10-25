@@ -258,6 +258,7 @@ export default function InterviewSession() {
   const isSpeaking = session.state === 'SPEAKING_QUESTION' || session.state === 'FOLLOW_UP';
   const isListening = session.state === 'LISTENING';
   const isPaused = session.state === 'PAUSED';
+  const isDeciding = session.state === 'PROCESSING_RESPONSE';
 
   const handleManualSubmit = (e) => {
     e?.preventDefault();
@@ -288,12 +289,34 @@ export default function InterviewSession() {
         </div>
 
         <div className="live-header__right">
+          <span
+            className="adaptive-chip"
+            data-testid="adaptive-chip"
+            style={{
+              fontSize: '0.75rem',
+              fontWeight: 500,
+              padding: '2px 8px',
+              borderRadius: '9999px',
+              backgroundColor: session.reasoning?.providerKind === 'gemini' ? '#e0f2fe' : '#f1f5f9',
+              color: session.reasoning?.providerKind === 'gemini' ? '#0369a1' : '#475569',
+              border: '1px solid currentColor',
+              display: 'inline-flex',
+              alignItems: 'center',
+            }}
+          >
+            {session.reasoning?.providerKind === 'gemini'
+              ? 'Adaptive: Gemini'
+              : 'Adaptive: fallback (no AI)'}
+          </span>
+
           {isPaused ? (
             <Badge variant="warning" size="md">Paused</Badge>
           ) : isSpeaking ? (
             <Badge variant="active" size="md">Interviewer Speaking</Badge>
           ) : isListening ? (
             <Badge variant="success" size="md">Listening for Answer</Badge>
+          ) : isDeciding ? (
+            <Badge variant="draft" size="md" aria-live="polite">Thinking…</Badge>
           ) : (
             <Badge variant="draft" size="md">Processing</Badge>
           )}
@@ -374,6 +397,13 @@ export default function InterviewSession() {
             <div className="listening-indicator" role="status">
               <span className="listening-pulse" />
               <span>Microphone Active — Listening for your response (speak clearly or switch to text below)</span>
+            </div>
+          )}
+
+          {isDeciding && (
+            <div className="deciding-indicator" role="status" aria-live="polite" style={{ padding: '0.75rem 1rem', background: 'var(--color-bg-subtle, #f8fafc)', borderRadius: '6px', margin: '0.75rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem', fontStyle: 'italic', color: '#475569' }}>
+              <span className="deciding-pulse">⏳</span>
+              <span>Thinking…</span>
             </div>
           )}
 

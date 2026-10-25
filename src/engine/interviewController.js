@@ -24,6 +24,7 @@ import { detectCapabilities } from '../voice/capabilities.js';
 import { createSessionRecord, createTurn, sessionStore, SessionStatus } from '../data/sessions.js';
 import { DeterministicTranscriptProvider, runSessionAnalysis } from '../analysis/provider.js';
 import { VoiceTurnEndpointer } from './endpointing.js';
+import { GeminiReasoner, DeterministicReasoner } from '../analysis/reasoner.js';
 
 export class InterviewController {
   /**
@@ -80,6 +81,15 @@ export class InterviewController {
       minAnswerMs: options.minAnswerMs !== undefined ? options.minAnswerMs : 400,
       onSilenceTimeout: this._handleSilenceTimeout.bind(this),
     });
+
+    // Adaptive reasoner module
+    this.reasoner =
+      options.reasoner !== undefined
+        ? options.reasoner
+        : (typeof window !== 'undefined' ? new GeminiReasoner() : null);
+    this.globalFollowUpCount = 0;
+    this.maxGlobalFollowUps = options.maxGlobalFollowUps || 8;
+    this._turnToken = 0;
 
     // Session persistence & analysis abstraction
     this.sessionStore = options.sessionStore || sessionStore;
@@ -453,8 +463,122 @@ export class InterviewController {
     // Transition state machine: LISTENING -> PROCESSING_RESPONSE
     this.stateMachine.transition(InterviewEvent.RESPONSE_RECEIVED);
 
-    this._advanceOrFinish();
+    this._handleDeciding();
     return true;
+  }
+
+  /**
+   * Handle adaptive evaluation and deciding phase for the current response.
+   */
+  _handleDeciding() {
+    const turnToken = ++this._turnToken;
+
+    if (!this.reasoner) {
+      this._advanceOrFinish();
+      return;
+    }
+
+    const currentPrompt = this.questionManager.getActivePrompt();
+    const candidateAnswer = this.currentTurn?.answer?.finalText || '';
+    const currentQuestion = currentPrompt?.text || '';
+    const followUpCount = this.questionManager.getCurrentFollowUpCount();
+
+    const canFollowUp =
+      !currentPrompt?.isFollowUp &&
+      this.questionManager.canFollowUp() &&
+      this.globalFollowUpCount < this.maxGlobalFollowUps;
+
+    const reasonParams = {
+      jobTitle: this.job?.title,
+      requirements: this.job?.requirements,
+      currentQuestion,
+      candidateAnswer,
+      history: (this.sessionRecord?.turns || []).slice(0, -1).map((t) => ({
+        question: t.text || '',
+        answer: t.answer?.finalText || '',
+      })),
+      followUpCount,
+      globalFollowUpCount: this.globalFollowUpCount,
+    };
+
+    let result;
+    try {
+      result = this.reasoner.reason(reasonParams);
+    } catch {
+      result = {
+        action: 'ADVANCE',
+        reasoning: 'Reasoner call failed synchronously; advancing.',
+        providerId: 'deterministic-fallback',
+        providerKind: 'deterministic',
+      };
+    }
+
+    if (result && typeof result.then === 'function') {
+      result
+        .then((decision) => {
+          this._applyDecision(turnToken, decision, canFollowUp);
+        })
+        .catch(() => {
+          this._applyDecision(
+            turnToken,
+            {
+              action: 'ADVANCE',
+              reasoning: 'Reasoner promise rejected; advancing.',
+              providerId: 'deterministic-fallback',
+              providerKind: 'deterministic',
+            },
+            canFollowUp
+          );
+        });
+    } else {
+      this._applyDecision(turnToken, result, canFollowUp);
+    }
+  }
+
+  _applyDecision(turnToken, decision, canFollowUp) {
+    if (
+      turnToken !== this._turnToken ||
+      this.isDestroyed ||
+      this.stateMachine.getState() !== InterviewState.PROCESSING_RESPONSE
+    ) {
+      return;
+    }
+
+    if (this.currentTurn) {
+      this.currentTurn.decision = decision;
+    }
+    if (this.sessionRecord) {
+      this.sessionRecord.reasoning = {
+        providerId: decision?.providerId || 'deterministic-fallback',
+        providerKind: decision?.providerKind || 'deterministic',
+      };
+      this._persistSession();
+    }
+
+    if (decision?.action === 'END') {
+      this.isSubmitting = false;
+      this._finishInterview();
+      return;
+    }
+
+    if (canFollowUp && decision?.action === 'ASK_FOLLOW_UP' && decision.followUpQuestion) {
+      this.globalFollowUpCount++;
+      this.questionManager.recordFollowUp(
+        decision.followUpQuestion,
+        decision.reasoning || 'Follow-up elaboration'
+      );
+      this.isSubmitting = false;
+      this.stateMachine.transition(InterviewEvent.TRIGGER_FOLLOW_UP);
+
+      if (this.onTranscriptUpdate) {
+        this.onTranscriptUpdate(this.eventLog.getTranscript());
+      }
+
+      this._presentCurrentQuestion();
+    } else {
+      this.isSubmitting = false;
+      this._advanceOrFinish();
+    }
   }
 
   /**
@@ -646,6 +770,7 @@ export class InterviewController {
    * Candidate explicitly aborts the interview early.
    */
   endEarly() {
+    this._turnToken++;
     const currentState = this.stateMachine.getState();
     if (
       currentState === InterviewState.COMPLETED ||
@@ -774,6 +899,7 @@ export class InterviewController {
    */
   destroy() {
     this.isDestroyed = true;
+    this._turnToken++;
     this._stopAllAudio();
     this._endpointer.destroy();
 

@@ -21,6 +21,7 @@ export function useInterviewSession(job, options = {}) {
       capabilities: options.capabilities,
       speechRecognizer: options.speechRecognizer,
       speechSynthesizer: options.speechSynthesizer,
+      reasoner: options.reasoner,
       onStateChange: (newState) => {
         setState(newState);
         forceUpdate();
@@ -60,6 +61,7 @@ export function useInterviewSession(job, options = {}) {
     speechError,
     inputMode: controller?.getInputMode() || 'text',
     capabilities: controller?.capabilities || null,
+    reasoning: controller?.sessionRecord?.reasoning || { providerKind: 'deterministic', providerId: 'none' },
 
     // Actions
     grantConsent: useCallback(() => {

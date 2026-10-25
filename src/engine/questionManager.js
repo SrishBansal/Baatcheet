@@ -120,7 +120,7 @@ export class QuestionManager {
    * @returns {{ id: string, text: string, isFollowUp: true, parentQuestionId: string }}
    * @throws {Error} If follow-up limit exceeded
    */
-  recordFollowUp(text) {
+  recordFollowUp(text, rationale = 'Probing candidate response for depth') {
     if (!this.canFollowUp()) {
       const current = this.getCurrentQuestion();
       throw new Error(
@@ -135,6 +135,7 @@ export class QuestionManager {
     const followUpObj = {
       id: `${current.id}-followup-${currentCount + 1}`,
       text: text.trim(),
+      rationale: (rationale || 'Probing candidate response for depth').trim(),
       isFollowUp: true,
       parentQuestionId: current.id,
       category: current.category,
@@ -147,7 +148,7 @@ export class QuestionManager {
 
   /**
    * Get the currently active prompt to be spoken or displayed (base question or follow-up).
-   * @returns {{ text: string, isFollowUp: boolean, questionId: string } | null}
+   * @returns {{ text: string, isFollowUp: boolean, questionId: string, rationale?: string } | null}
    */
   getActivePrompt() {
     if (this.activeFollowUp) {
@@ -155,6 +156,7 @@ export class QuestionManager {
         text: this.activeFollowUp.text,
         isFollowUp: true,
         questionId: this.activeFollowUp.id,
+        rationale: this.activeFollowUp.rationale,
       };
     }
     const current = this.getCurrentQuestion();
