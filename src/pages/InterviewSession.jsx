@@ -104,6 +104,9 @@ export default function InterviewSession() {
       </div>
     );
   }
+  if (job.status === 'closed') {
+    return <div className="interview-error-state"><div className="card interview-error-card"><h2>This position is closed.</h2></div></div>;
+  }
   // 0.5 Reload-interrupted guard screen
   if (reloadInterrupted && job) {
     return (

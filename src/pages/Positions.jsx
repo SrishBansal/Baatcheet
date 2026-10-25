@@ -68,7 +68,14 @@ export default function Positions() {
 
   const activeCount = jobs.filter((j) => j.status === 'active').length;
   const draftCount = jobs.filter((j) => j.status === 'draft').length;
-  const archivedCount = jobs.filter((j) => j.status === 'archived').length;
+  const closedCount = jobs.filter((j) => j.status === 'closed').length;
+  const refresh = () => { setJobs(store.jobs.getAll()); setSessions(store.sessions.getAll()); };
+  const activate = (job) => {
+    if (!job.title || !(job.skills || job.requirements || []).length) { window.alert('A title and at least one requirement are required to activate this position.'); return; }
+    store.jobs.update(job.id, { status: 'active' }); refresh();
+  };
+  const close = (job) => { if (window.confirm('Candidates will no longer be able to start this interview.')) { store.jobs.update(job.id, { status: 'closed', closedReason: 'manual', closedAt: new Date().toISOString() }); refresh(); } };
+  const reopen = (job) => { store.jobs.update(job.id, { status: 'active', closedReason: null, hiredSessionId: null, closedAt: null }); refresh(); };
 
   return (
     <div className="positions-page">
@@ -128,13 +135,13 @@ export default function Positions() {
           >
             Drafts ({draftCount})
           </button>
-          {archivedCount > 0 && (
+          {closedCount > 0 && (
             <button
               type="button"
-              className={`filter-tab ${statusFilter === 'archived' ? 'filter-tab--active' : ''}`}
-              onClick={() => setStatusFilter('archived')}
+            className={`filter-tab ${statusFilter === 'closed' ? 'filter-tab--active' : ''}`}
+            onClick={() => setStatusFilter('closed')}
             >
-              Archived ({archivedCount})
+              Closed ({closedCount})
             </button>
           )}
         </div>
@@ -193,7 +200,7 @@ export default function Positions() {
 
                 let badgeVariant = 'draft';
                 if (job.status === 'active') badgeVariant = 'active';
-                else if (job.status === 'archived') badgeVariant = 'warning';
+                else if (job.status === 'closed') badgeVariant = 'warning';
 
                 return (
                   <tr key={job.id} className="positions-table__row">
@@ -239,16 +246,19 @@ export default function Positions() {
 
                     <td className="positions-table__cell-actions">
                       <div className="positions-actions-group">
-                        {job.status === 'active' && questionsCount > 0 && (
+                        {job.status === 'active' && (
                           <Button
                             variant="secondary"
                             size="sm"
                             onClick={() => navigate(`/interview/${job.id}`)}
                             title="Open candidate interview room"
                           >
-                            Interview
+                            Start interview
                           </Button>
                         )}
+                        {job.status === 'active' && <Button variant="ghost" size="sm" onClick={() => close(job)}>Close position</Button>}
+                        {job.status === 'draft' && <><Button variant="secondary" size="sm" onClick={() => activate(job)}>Activate</Button><Button variant="secondary" size="sm" onClick={() => navigate(`/interview/${job.id}`)}>Test interview</Button></>}
+                        {job.status === 'closed' && <Button variant="secondary" size="sm" onClick={() => reopen(job)}>Reopen</Button>}
                         <Button
                           variant="ghost"
                           size="sm"

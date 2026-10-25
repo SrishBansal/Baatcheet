@@ -333,14 +333,14 @@ export default function JobConfig() {
   };
 
   // Save full job
-  const handleSaveJob = (e) => {
+  const handleSaveJob = (e, requestedStatus) => {
     e.preventDefault();
     setErrors({});
 
     const jobData = {
       title: title.trim(),
       description: description.trim(),
-      status,
+      status: requestedStatus === 'draft' ? 'draft' : (status === 'closed' ? 'closed' : (title.trim() && skills.length ? 'active' : status)),
       skills,
       questions,
       criteria,
@@ -453,8 +453,9 @@ export default function JobConfig() {
               variant="primary"
               icon={<CheckIcon />}
             >
-              {isEditing ? 'Save Changes' : 'Create Position'}
+              Save position
             </Button>
+            <Button type="button" variant="secondary" onClick={(e) => handleSaveJob(e, 'draft')}>Save as draft</Button>
           </div>
         </div>
 
@@ -625,7 +626,7 @@ export default function JobConfig() {
               <div className="form-col form-col--4">
                 <Select
                   id="job-status-select"
-                  label="Recruiting Status"
+                  label="Status"
                   value={status}
                   onChange={(e) => setStatus(e.target.value)}
                   options={JOB_STATUSES.map((s) => ({

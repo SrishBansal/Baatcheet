@@ -82,6 +82,8 @@ export function createSessionRecord({ id, job }) {
     jobId: job.id,
     jobSnapshot,
     status: SessionStatus.IN_PROGRESS,
+    outcome: 'undecided',
+    outcomeAt: null,
     startedAt: new Date().toISOString(),
     endedAt: null,
     turns: [],
@@ -140,7 +142,7 @@ export function migrateSession(record) {
 
   // Already current
   if (version === SESSION_SCHEMA_VERSION) {
-    return current;
+    return { ...current, outcome: current.outcome ?? 'undecided', outcomeAt: current.outcomeAt ?? null };
   }
 
   // v0 → v1: unversioned prototype sessions — stamp the version, keep all data
@@ -173,6 +175,8 @@ export function migrateSession(record) {
       turns: migratedTurns,
       analysis: migratedAnalysis,
       reasoning: current.reasoning ?? { providerId: 'none', providerKind: 'deterministic' },
+      outcome: current.outcome ?? 'undecided',
+      outcomeAt: current.outcomeAt ?? null,
     };
     version = 2;
   }

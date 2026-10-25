@@ -101,7 +101,7 @@ describe('models', () => {
 
   describe('constants', () => {
     it('has expected job statuses', () => {
-      expect(JOB_STATUSES).toEqual(['draft', 'active', 'archived']);
+      expect(JOB_STATUSES).toEqual(['draft', 'active', 'closed']);
     });
 
     it('has expected question categories', () => {

@@ -111,7 +111,7 @@ export function createCriterion(overrides = {}) {
  * @property {Skill[]} skills
  * @property {InterviewQuestion[]} questions
  * @property {EvaluationCriterion[]} criteria
- * @property {'draft' | 'active' | 'archived'} status
+ * @property {'draft' | 'active' | 'closed'} status
  * @property {string} createdAt - ISO 8601
  * @property {string} updatedAt - ISO 8601
  */
@@ -139,6 +139,7 @@ export function createJob(overrides = {}) {
     allowTyping: false,
     ...(overrides.settings || {}),
   };
+  const status = ['draft', 'active', 'closed'].includes(overrides.status) ? overrides.status : 'draft';
   return {
     id: generateId(),
     title: '',
@@ -146,7 +147,10 @@ export function createJob(overrides = {}) {
     skills: [],
     questions: [],
     criteria: [],
-    status: 'draft',
+    status,
+    closedReason: null,
+    hiredSessionId: null,
+    closedAt: null,
     settings,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -158,7 +162,7 @@ export function createJob(overrides = {}) {
 /**
  * Valid job statuses.
  */
-export const JOB_STATUSES = ['draft', 'active', 'archived'];
+export const JOB_STATUSES = ['draft', 'active', 'closed'];
 
 /**
  * Question categories.
