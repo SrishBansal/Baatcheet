@@ -23,7 +23,7 @@ import { BrowserSpeechSynthesizer } from '../voice/speechSynthesis.js';
 import { detectCapabilities } from '../voice/capabilities.js';
 import { createSessionRecord, createTurn, sessionStore, SessionStatus } from '../data/sessions.js';
 import { DeterministicTranscriptProvider, runSessionAnalysis } from '../analysis/provider.js';
-import { VoiceTurnEndpointer } from './endpointing.js';
+import { VoiceTurnEndpointer, shouldPerformDoneCheck, DONE_PATTERN, POST_CHECK_SILENCE_MS } from './endpointing.js';
 import { GeminiReasoner, DeterministicReasoner } from '../analysis/reasoner.js';
 import { nextTurn } from '../data/engineApi.js';
 import { toEngineJob } from './engineJob.js';
@@ -72,7 +72,11 @@ export class InterviewController {
 
     // Session flags
     this.hasConsented = false;
-    this.inputMode = this.capabilities.hasSpeechRecognition ? 'voice' : 'text';
+    this.allowTyping = this.job.settings?.allowTyping === true;
+    this.inputMode = 'voice';
+    this._checksUsed = 0;
+    this._postCheckTimer = null;
+    this._awaitingDoneCheck = false;
     this.isSubmitting = false;
     this.isAdvancing = false;
     this.isDestroyed = false;
@@ -527,6 +531,9 @@ export class InterviewController {
     this.questionStartTime = Date.now();
     this.interimText = '';
     this.currentAnswerDraft = '';
+    this._checksUsed = 0;
+    this._awaitingDoneCheck = false;
+    this._clearPostCheckTimer();
     this.isSubmitting = false;
 
     this._stopAllAudio();
@@ -699,6 +706,22 @@ export class InterviewController {
 
     this._callNextTurn();
     return true;
+  }
+
+  doneAnswer() {
+    return this.submitAnswer(this.currentAnswerDraft);
+  }
+
+  startOverAnswer() {
+    this.currentAnswerDraft = '';
+    this.interimText = '';
+    this._awaitingDoneCheck = false;
+    this._clearPostCheckTimer();
+    this._endpointer.cancelTurn();
+    if (this.stateMachine.getState() === InterviewState.LISTENING && this.recognizer.isSupported()) {
+      this._endpointer.startTurn();
+      this.recognizer.start();
+    }
   }
 
   /**
@@ -909,6 +932,7 @@ export class InterviewController {
    * @param {'voice' | 'text'} mode
    */
   setInputMode(mode) {
+    if (!this.allowTyping && mode === 'text') return;
     if (mode === this.inputMode) return;
     this.inputMode = mode;
 
@@ -939,6 +963,16 @@ export class InterviewController {
     if (this.isDestroyed) return;
     if (this.stateMachine.getState() !== InterviewState.LISTENING) return;
 
+    if (this._awaitingDoneCheck && isFinal && DONE_PATTERN.test(text || '')) {
+      this._clearPostCheckTimer();
+      this._awaitingDoneCheck = false;
+      this.submitAnswer(this.currentAnswerDraft);
+      return;
+    }
+    if (this._awaitingDoneCheck) {
+      this._clearPostCheckTimer();
+      this._awaitingDoneCheck = false;
+    }
     this.interimText = interimText;
     this.currentAnswerDraft = text;
 
@@ -983,6 +1017,26 @@ export class InterviewController {
     if (this.isSubmitting) return;
 
     const draft = (this.currentAnswerDraft || '').trim();
+    if (draft && this.inputMode === 'voice' && shouldPerformDoneCheck(draft, this._checksUsed)) {
+      this._checksUsed += 1;
+      this._awaitingDoneCheck = true;
+      if (this.recognizer.isListening) this.recognizer.stop();
+      this.synthesizer.speak('Is that everything, or would you like to add more?', {
+        onEnd: () => {
+          if (this.isDestroyed || !this._awaitingDoneCheck) return;
+          this._endpointer.startTurn();
+          this.recognizer.start();
+          this._postCheckTimer = setTimeout(() => {
+            this._postCheckTimer = null;
+            if (this._awaitingDoneCheck) {
+              this._awaitingDoneCheck = false;
+              this.submitAnswer(this.currentAnswerDraft);
+            }
+          }, POST_CHECK_SILENCE_MS);
+        },
+      });
+      return;
+    }
     if (draft) {
       // Auto-submit the voice answer
       this.eventLog.logEvent(EventType.CANDIDATE_ANSWERED_AUTO, {
@@ -996,6 +1050,7 @@ export class InterviewController {
   }
 
   _stopAllAudio() {
+    this._clearPostCheckTimer();
     if (this.synthesizer && typeof this.synthesizer.stop === 'function') {
       this.synthesizer.stop();
     }
@@ -1023,6 +1078,13 @@ export class InterviewController {
     }
     if (this.synthesizer) {
       this.synthesizer.destroy();
+    }
+  }
+
+  _clearPostCheckTimer() {
+    if (this._postCheckTimer !== null) {
+      clearTimeout(this._postCheckTimer);
+      this._postCheckTimer = null;
     }
   }
 }

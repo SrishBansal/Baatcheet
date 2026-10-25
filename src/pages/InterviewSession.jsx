@@ -12,6 +12,7 @@ import {
   XIcon,
 } from '../components/ui/Icons.jsx';
 import './InterviewSession.css';
+import { health } from '../data/engineApi.js';
 
 export default function InterviewSession() {
   const { jobId } = useParams();
@@ -23,6 +24,7 @@ export default function InterviewSession() {
   const [isEndModalOpen, setIsEndModalOpen] = useState(false);
   const [showTranscriptDrawer, setShowTranscriptDrawer] = useState(false);
   const [reloadInterrupted, setReloadInterrupted] = useState(false);
+  const [engineHealth, setEngineHealth] = useState(null);
 
   useEffect(() => {
     const loadedJob = store.jobs.getById(jobId);
@@ -30,6 +32,7 @@ export default function InterviewSession() {
       setJob(loadedJob);
     }
   }, [jobId]);
+  useEffect(() => { health().then(setEngineHealth).catch(() => setEngineHealth({ geminiConfigured: false })); }, []);
 
   // Compute a stable interviewId once per component mount.
   // IMPORTANT: Do NOT use Date.now() inline in the options object passed to useInterviewSession.
@@ -85,6 +88,7 @@ export default function InterviewSession() {
   }, [activeSessionKey]);
 
   const session = useInterviewSession(job, { interviewId: interviewIdRef.current });
+  const allowTyping = job?.settings?.allowTyping === true;
 
   if (!job) {
     return (
@@ -145,34 +149,6 @@ export default function InterviewSession() {
           </div>
 
           <div className="interview-consent-body">
-            <h3>Interview Overview</h3>
-            <p>
-              Welcome to the HirePilot screening interview. This session consists of{' '}
-              <strong>{job.questions?.length || 0} structured questions</strong> designed to assess role competencies.
-            </p>
-
-            <div className="interview-features-grid">
-              <div className="feature-item">
-                <strong>Voice or Text</strong>
-                <span>Speak your answers naturally, or switch to manual typing at any point.</span>
-              </div>
-              <div className="feature-item">
-                <strong>In Your Control</strong>
-                <span>You can ask to repeat a question, request clarification, or skip ahead.</span>
-              </div>
-              <div className="feature-item">
-                <strong>Evidence-Backed</strong>
-                <span>Recruiters evaluate verified transcripts with human oversight.</span>
-              </div>
-            </div>
-
-            {session.capabilities && (
-              <div className="capability-notice">
-                <strong>Audio Environment: </strong>
-                {session.capabilities.summary}
-              </div>
-            )}
-
             <div className="consent-checkbox-row">
               <input
                 id="consent-acknowledgement"
@@ -181,8 +157,9 @@ export default function InterviewSession() {
                 onChange={(e) => setConsentChecked(e.target.checked)}
               />
               <label htmlFor="consent-acknowledgement">
-                I understand this is an AI-assisted screening interview. I consent to my responses
-                and transcript being recorded for evaluation by the hiring team.
+                {engineHealth?.geminiConfigured === false
+                  ? 'Before you start: Your spoken answers are transcribed and saved as a text transcript. Audio is not stored by this app. Chrome sends your audio to Google\'s speech service for transcription. AI is not configured; no follow-up questions will be generated. The recruiter will see: your full transcript; the questions asked and why. No hiring decision is made automatically. A requirement you were not asked about is marked \'Not assessed\' and is not held against you. You can end the interview at any time.'
+                  : "Before you start: Your spoken answers are transcribed and saved as a text transcript. Audio is not stored by this app. Chrome sends your audio to Google's speech service for transcription. The transcript is also sent to Google Gemini to generate follow-up questions and an assessment. The recruiter will see: your full transcript; an AI-generated assessment of how your answers relate to each job requirement, with quotes from your answers; the questions asked and why. No hiring decision is made automatically. A requirement you were not asked about is marked 'Not assessed' and is not held against you. You can end the interview at any time."}
               </label>
             </div>
           </div>
@@ -194,7 +171,7 @@ export default function InterviewSession() {
             <Button
               id="begin-interview-btn"
               variant="primary"
-              disabled={!consentChecked}
+              disabled={!consentChecked || engineHealth?.geminiConfigured === false}
               onClick={() => {
                 session.grantConsent();
                 session.startInterview();
@@ -271,10 +248,14 @@ export default function InterviewSession() {
   const handleVoiceSubmit = () => {
     const textToSubmit = session.interimSpeech || typedAnswer;
     if (textToSubmit.trim()) {
-      session.submitAnswer(textToSubmit.trim());
+      session.doneAnswer ? session.doneAnswer() : session.submitAnswer(textToSubmit.trim());
       setTypedAnswer('');
     }
   };
+
+  if (!allowTyping && (!session.capabilities?.hasSpeechRecognition || /permission|denied/i.test(session.speechError || ''))) {
+    return <div className="interview-error-state"><div className="card interview-error-card"><p>This interview needs a microphone and Chrome. Allow microphone access, then retry.</p><Button onClick={() => window.location.reload()}>Retry</Button></div></div>;
+  }
 
   return (
     <div className="interview-live-layout">
@@ -384,7 +365,7 @@ export default function InterviewSession() {
               : isSpeaking
               ? `“${session.activePrompt?.text || ''}”`
               : isListening
-              ? 'Awaiting candidate speech or manual input...'
+              ? 'Awaiting candidate speech...'
               : 'Captions will appear here when speaking or listening.'}
           </p>
         </div>
@@ -440,7 +421,7 @@ export default function InterviewSession() {
           {isListening && (
             <div className="listening-indicator" role="status">
               <span className="listening-pulse" />
-              <span>Microphone Active — Listening for your response (speak clearly or switch to text below)</span>
+              <span>Microphone Active — Listening for your response</span>
             </div>
           )}
 
@@ -470,6 +451,7 @@ export default function InterviewSession() {
         {!isPaused && (
           <div className="response-card">
             <div className="response-card__header">
+              {allowTyping && <>
               <div className="response-card__tabs">
                 <button
                   type="button"
@@ -493,10 +475,11 @@ export default function InterviewSession() {
                   (Voice input unsupported in this browser; text mode active)
                 </span>
               )}
+              </>}
             </div>
 
             <div className="response-card__body">
-              {session.inputMode === 'voice' ? (
+              {!allowTyping || session.inputMode === 'voice' ? (
                 <div className="voice-response-box">
                   <div className="voice-response-live">
                     {session.interimSpeech ? (
@@ -514,7 +497,7 @@ export default function InterviewSession() {
                       disabled={!session.interimSpeech.trim() || !isListening}
                       onClick={handleVoiceSubmit}
                     >
-                      Submit Answer
+                      Done answering
                     </Button>
                   </div>
                 </div>
@@ -558,14 +541,7 @@ export default function InterviewSession() {
               Repeat Question
             </Button>
             <Button
-              id="clarify-btn"
-              variant="secondary"
-              size="sm"
-              disabled={!isListening}
-              onClick={() => session.clarifyQuestion()}
-            >
-              Clarify
-            </Button>
+              id="start-over-btn" variant="secondary" size="sm" disabled={!isListening} onClick={() => session.startOverAnswer?.()}>Start over</Button>
           </div>
 
           <div className="live-controls__group">
@@ -606,7 +582,7 @@ export default function InterviewSession() {
                   className={`drawer-turn drawer-turn--${turn.role}`}
                 >
                   <span className="drawer-turn__role">
-                    {turn.role === 'interviewer' ? 'HirePilot' : 'You'}
+                    {turn.role === 'interviewer' ? 'Baatcheet' : 'You'}
                   </span>
                   <p className="drawer-turn__text">
                     {turn.text || turn.recognizedText || (turn.skipped ? '[Question Skipped]' : '')}

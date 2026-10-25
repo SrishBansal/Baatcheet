@@ -17,7 +17,36 @@ export const EXTENDED_SILENCE_MS = 4500;
 export const MAX_WAIT_MS = 8000;
 export const NO_SPEECH_REPROMPT_MS = 10000;
 
+export const CHECK_ENABLED = true;
+export const CHECK_MAX_WORDS = 25;
+export const POST_CHECK_SILENCE_MS = 5000;
+export const MAX_CHECKS_PER_ANSWER = 1;
+// narrow control-phrase match, not understanding
+export const DONE_PATTERN = /^\s*(no|nope|nothing( else| more)?|that'?s (all|it|everything)|that is (all|everything)|i'?m done|i am done|done|all done)\b/i;
+
 const TRAILING_CONNECTOR_REGEX = /^(and|so|but|because|um|uh)$/i;
+
+/**
+ * Checks whether an answer should trigger the "Are you done?" check.
+ * @param {string} text
+ * @param {number} checksUsed
+ * @returns {boolean}
+ */
+export function shouldPerformDoneCheck(text, checksUsed = 0) {
+  if (!CHECK_ENABLED || checksUsed >= MAX_CHECKS_PER_ANSWER) return false;
+  if (!text || typeof text !== 'string') return false;
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  if (words.length < CHECK_MAX_WORDS) return true;
+
+  const lastWord = words[words.length - 1].replace(/[.,?!]+$/, '').toLowerCase();
+  if (TRAILING_CONNECTOR_REGEX.test(lastWord) || trimmed.endsWith(',')) {
+    return true;
+  }
+  return false;
+}
 
 /**
  * Determine dynamic silence duration based on answer length and completion syntax.

@@ -87,6 +87,19 @@ export function useInterviewSession(job, options = {}) {
       return res;
     }, [forceUpdate]),
 
+    doneAnswer: useCallback(() => {
+      const res = controllerRef.current?.doneAnswer();
+      setInterimSpeech('');
+      forceUpdate();
+      return res;
+    }, [forceUpdate]),
+
+    startOverAnswer: useCallback(() => {
+      controllerRef.current?.startOverAnswer();
+      setInterimSpeech('');
+      forceUpdate();
+    }, [forceUpdate]),
+
     skipQuestion: useCallback(() => {
       const res = controllerRef.current?.skipQuestion();
       setInterimSpeech('');

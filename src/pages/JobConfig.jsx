@@ -25,7 +25,7 @@ import {
   TargetIcon,
   ChevronRightIcon,
 } from '../components/ui/Icons.jsx';
-import { importJob } from '../data/engineApi.js';
+import { importJob, suggestQuestions } from '../data/engineApi.js';
 import './JobConfig.css';
 
 /**
@@ -45,6 +45,8 @@ export default function JobConfig() {
   const [skills, setSkills] = useState([]);
   const [questions, setQuestions] = useState([]);
   const [criteria, setCriteria] = useState([]);
+  const [allowTyping, setAllowTyping] = useState(false);
+  const [suggestionError, setSuggestionError] = useState('');
   const [errors, setErrors] = useState({});
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -96,6 +98,7 @@ export default function JobConfig() {
         setSkills(existing.skills || []);
         setQuestions(existing.questions || []);
         setCriteria(existing.criteria || []);
+        setAllowTyping(existing.settings?.allowTyping === true);
       } else {
         navigate('/', { replace: true });
       }
@@ -174,7 +177,9 @@ export default function JobConfig() {
       createSkill({ name: r.name, priority: r.kind === 'preferred' ? 'preferred' : 'required' })
     );
     setSkills(createdSkills);
-    // Questions are NOT generated on import — leave existing questions untouched (spec)
+    if (createdSkills.length && questions.length === 0) {
+      requestSuggestions(createdSkills, questions);
+    }
 
     setIsImportReviewOpen(false);
     setIsImportPanelOpen(false);
@@ -187,6 +192,19 @@ export default function JobConfig() {
     }
     setImportSuccessBanner(`Imported "${reviewTitle}". Questions unchanged.`);
     setTimeout(() => setImportSuccessBanner(''), 6000);
+  };
+
+  const requestSuggestions = async (skillList = skills, current = questions) => {
+    setSuggestionError('');
+    try {
+      const draft = createJob({ title, description, skills: skillList, questions: current, criteria, settings: { allowTyping } });
+      const result = await suggestQuestions({ job: { title: draft.title, requirements: skillList.map((s) => ({ name: s.name })) }, existing: current.map((q) => q.text) });
+      const added = (result.questions || result.items || []).map((item, index) => {
+        const skill = skillList.find((s) => s.name === item.requirementName);
+        return createQuestion({ text: item.text, relatedSkills: skill ? [skill.id] : [], requirementIds: skill ? [skill.id] : [], source: 'ai', order: current.length + index });
+      });
+      setQuestions((prior) => [...prior, ...added].map((q, index) => ({ ...q, order: index })));
+    } catch (err) { setSuggestionError(err.message || 'server_error'); }
   };
 
   // Skill management
@@ -328,6 +346,7 @@ export default function JobConfig() {
       skills,
       questions,
       criteria,
+      settings: { allowTyping },
     };
 
     if (!jobData.title) {
@@ -770,8 +789,9 @@ export default function JobConfig() {
               icon={<PlusIcon />}
               onClick={handleOpenAddQuestion}
             >
-              Add Question
+              Add my own question
             </Button>
+            <Button type="button" variant="secondary" size="sm" onClick={() => requestSuggestions()}>{questions.length ? 'Regenerate suggestions' : 'Suggest questions'}</Button>
           </div>
 
           <div className="config-section__body">
@@ -811,6 +831,7 @@ export default function JobConfig() {
                         <Badge variant="draft" size="sm">
                           {q.category}
                         </Badge>
+                        {q.source === 'ai' && <Badge variant="active" size="sm">AI-suggested</Badge>}
                         <span className="question-item__followup-info">
                           Follow-ups allowed: {q.maxFollowUps ?? 1}
                         </span>
@@ -842,7 +863,10 @@ export default function JobConfig() {
               </div>
             )}
           </div>
+          {suggestionError && <div className="alert alert--danger" role="alert">{suggestionError} <Button type="button" size="sm" onClick={() => requestSuggestions()}>Retry</Button></div>}
         </section>
+
+        <section className="config-section"><h2 className="config-section__title">Settings</h2><label><input type="checkbox" checked={allowTyping} onChange={(e) => setAllowTyping(e.target.checked)} /> Allow typed answers</label><p>Typed answers cannot be verified as the candidate's own.</p></section>
 
         {/* Section 4: Mandatory Screening Criteria */}
         <section className="config-section">
@@ -1205,4 +1229,3 @@ export default function JobConfig() {
     </div>
   );
 }
-

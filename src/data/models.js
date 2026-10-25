@@ -135,6 +135,10 @@ export const JOB_SCHEMA = {
  */
 export function createJob(overrides = {}) {
   const timestamp = now();
+  const settings = {
+    allowTyping: false,
+    ...(overrides.settings || {}),
+  };
   return {
     id: generateId(),
     title: '',
@@ -143,9 +147,11 @@ export function createJob(overrides = {}) {
     questions: [],
     criteria: [],
     status: 'draft',
+    settings,
     createdAt: timestamp,
     updatedAt: timestamp,
     ...overrides,
+    settings,
   };
 }
 
