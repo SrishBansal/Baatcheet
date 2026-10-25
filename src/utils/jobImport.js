@@ -404,3 +404,41 @@ function extractSkillsFromDescription(desc) {
 
   return skills.slice(0, 8);
 }
+
+/**
+ * Computes direct content word overlap ratio between extracted text and source text.
+ * Requires >= 70% (0.70) overlap for verification without warning.
+ *
+ * @param {string} extractedText
+ * @param {string} sourceText
+ * @returns {{ ratio: number, verified: boolean, matchingCount: number, totalCount: number }}
+ */
+export function computeContentOverlap(extractedText, sourceText) {
+  const getWords = (str) =>
+    (str || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length >= 3);
+
+  const sourceWords = new Set(getWords(sourceText));
+  if (sourceWords.size === 0) {
+    return { ratio: 0, verified: false, matchingCount: 0, totalCount: 0 };
+  }
+
+  const extractedWords = getWords(extractedText);
+  if (extractedWords.length === 0) {
+    return { ratio: 1, verified: true, matchingCount: 0, totalCount: 0 };
+  }
+
+  const matching = extractedWords.filter((w) => sourceWords.has(w));
+  const ratio = matching.length / extractedWords.length;
+
+  return {
+    ratio,
+    verified: ratio >= 0.7,
+    matchingCount: matching.length,
+    totalCount: extractedWords.length,
+  };
+}
+

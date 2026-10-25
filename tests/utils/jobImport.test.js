@@ -7,6 +7,7 @@ import {
   parseJobPostingHtml,
   parsePastedJobText,
   stripHtml,
+  computeContentOverlap,
 } from '../../src/utils/jobImport.js';
 import { store } from '../../src/data/store.js';
 import { createJob, createSkill, createQuestion, createCriterion } from '../../src/data/models.js';
@@ -211,4 +212,23 @@ We are seeking a PostgreSQL tuning specialist to optimize query performance and 
       expect(retrieved.criteria.length).toBe(1);
     });
   });
+
+  describe('computeContentOverlap', () => {
+    it('verifies content when extracted text overlaps >= 70% with source', () => {
+      const source = 'We are hiring a Senior Frontend Engineer proficient in React, TypeScript, Redux, and Jest testing.';
+      const extracted = 'Senior Frontend Engineer React TypeScript Jest';
+      const result = computeContentOverlap(extracted, source);
+      expect(result.verified).toBe(true);
+      expect(result.ratio).toBeGreaterThanOrEqual(0.7);
+    });
+
+    it('flags warning when extracted text has low overlap with source', () => {
+      const source = 'We are hiring a Senior Frontend Engineer proficient in React.';
+      const extracted = 'Kubernetes Cloud Architect Golang Terraform Python';
+      const result = computeContentOverlap(extracted, source);
+      expect(result.verified).toBe(false);
+      expect(result.ratio).toBeLessThan(0.7);
+    });
+  });
 });
+

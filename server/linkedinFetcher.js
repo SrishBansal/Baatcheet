@@ -8,23 +8,45 @@
 export const MAX_BODY_BYTES = 512 * 1024; // 512 KB size cap
 export const FETCH_TIMEOUT_MS = 8000; // 8s timeout
 
+export function stripHtml(html) {
+  if (!html || typeof html !== 'string') return '';
+  return html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /**
  * Fetches public HTML from a target LinkedIn URL with timeout and size cap.
  *
  * @param {string} targetUrl
- * @returns {Promise<{ httpStatus: number, finalUrl: string, html: string }>}
+ * @returns {Promise<{ httpStatus: number, finalUrl: string, html: string, text: string }>}
  */
 export async function fetchLinkedInJobHtml(targetUrl) {
   if (!targetUrl || typeof targetUrl !== 'string') {
     throw new Error('Target URL is required.');
   }
 
+  const jobIdMatch = targetUrl.match(/\/jobs\/view\/([0-9]+)/) || targetUrl.match(/currentJobId=([0-9]+)/);
+  const fetchUrl =
+    jobIdMatch && !targetUrl.includes('jobs-guest/jobs/api/jobPosting')
+      ? `https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/${jobIdMatch[1]}`
+      : targetUrl;
+
   const userAgent =
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
   let response;
   try {
-    response = await fetch(targetUrl, {
+    response = await fetch(fetchUrl, {
       method: 'GET',
       headers: {
         'User-Agent': userAgent,
@@ -43,7 +65,7 @@ export async function fetchLinkedInJobHtml(targetUrl) {
   }
 
   const httpStatus = response.status;
-  const finalUrl = response.url || targetUrl;
+  const finalUrl = response.url || fetchUrl;
 
   // Handle distinct HTTP error statuses honestly
   if (httpStatus === 999) {
@@ -73,8 +95,9 @@ export async function fetchLinkedInJobHtml(targetUrl) {
   // Stream reader with size cap
   const reader = response.body?.getReader();
   if (!reader) {
-    const text = await response.text();
-    return { httpStatus, finalUrl, html: text.slice(0, MAX_BODY_BYTES) };
+    const raw = await response.text();
+    const truncated = raw.slice(0, MAX_BODY_BYTES);
+    return { httpStatus, finalUrl, html: truncated, text: stripHtml(truncated) };
   }
 
   const chunks = [];
@@ -107,5 +130,5 @@ export async function fetchLinkedInJobHtml(targetUrl) {
   const decoder = new TextDecoder('utf-8');
   const html = decoder.decode(concatenated);
 
-  return { httpStatus, finalUrl, html };
+  return { httpStatus, finalUrl, html, text: stripHtml(html) };
 }

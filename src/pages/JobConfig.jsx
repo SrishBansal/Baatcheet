@@ -25,6 +25,7 @@ import {
   TargetIcon,
   ChevronRightIcon,
 } from '../components/ui/Icons.jsx';
+import { computeContentOverlap } from '../utils/jobImport.js';
 import './JobConfig.css';
 
 /**
@@ -47,9 +48,11 @@ export default function JobConfig() {
   const [errors, setErrors] = useState({});
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // LinkedIn Import state
+  // LinkedIn / Paste Import state
   const [isImportPanelOpen, setIsImportPanelOpen] = useState(false);
+  const [importMode, setImportMode] = useState('url'); // 'url' | 'paste'
   const [linkedinUrl, setLinkedinUrl] = useState('');
+  const [pastedJobText, setPastedJobText] = useState('');
   const [isImportLoading, setIsImportLoading] = useState(false);
   const [importError, setImportError] = useState('');
   const [importReviewData, setImportReviewData] = useState(null);
@@ -97,7 +100,8 @@ export default function JobConfig() {
   }, [id, isEditing, navigate]);
 
   // LinkedIn Import handler
-  const handleStartLinkedInImport = () => {
+  // LinkedIn Import handler
+  const handleStartLinkedInImport = async () => {
     const trimmed = linkedinUrl.trim();
     setImportError('');
 
@@ -115,17 +119,119 @@ export default function JobConfig() {
 
     setIsImportLoading(true);
 
-    // Simulate honest analysis with network latency and parsing
-    setTimeout(() => {
-      setIsImportLoading(false);
-      try {
-        const extracted = parseLinkedInPosting(trimmed);
-        setImportReviewData(extracted);
-        setIsImportReviewOpen(true);
-      } catch (err) {
-        setImportError(err.message || 'Failed to extract job posting details.');
+    try {
+      const res = await fetch(`/api/fetch-linkedin?url=${encodeURIComponent(trimmed)}`);
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || `HTTP ${res.status}`);
       }
-    }, 600);
+
+      const extracted = json.data;
+      setImportReviewData({
+        title: extracted.title || 'Imported Position',
+        description: extracted.description || '',
+        skills: (extracted.requirements || extracted.skills || []).map((r) => ({
+          name: r.title || r.name,
+          priority: r.priority || r.weight || 'required',
+        })),
+        questions: (extracted.questions || []).map((q) => ({
+          text: q.text || q.question,
+          category: q.category || 'technical',
+          maxFollowUps: q.maxFollowUps ?? 1,
+        })),
+        criteria: (extracted.criteria || []).map((c) => ({
+          name: c.name || c.title,
+          description: c.description,
+        })),
+        provenance: extracted.provenance || 'extracted',
+      });
+      setIsImportReviewOpen(true);
+    } catch (err) {
+      // Graceful fallback to client-side parseLinkedInPosting
+      try {
+        const fallback = parseLinkedInPosting(trimmed);
+        setImportReviewData(fallback);
+        setIsImportReviewOpen(true);
+      } catch {
+        setImportError(err.message || 'Failed to fetch or parse LinkedIn posting.');
+      }
+    } finally {
+      setIsImportLoading(false);
+    }
+  };
+
+  // Paste Import handler with content word overlap verification (>=70%)
+  const handleStartPasteImport = async () => {
+    const trimmed = pastedJobText.trim();
+    setImportError('');
+
+    if (!trimmed || trimmed.length < 50) {
+      setImportError('Please paste at least 50 characters of job posting text.');
+      return;
+    }
+
+    setIsImportLoading(true);
+
+    try {
+      const res = await fetch('/api/parse-job', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: trimmed }),
+      });
+
+      let parsedData = null;
+      if (res.ok) {
+        const json = await res.json();
+        if (json.ok && json.data) {
+          parsedData = json.data;
+        }
+      }
+
+      if (!parsedData) {
+        // Fallback segmentation if endpoint not responding
+        parsedData = {
+          title: 'Position from Job Description',
+          description: trimmed.slice(0, 300) + '...',
+          requirements: [
+            { title: 'Core Competency', weight: 'required' },
+            { title: 'Technical Problem Solving', weight: 'required' },
+          ],
+          suggestedQuestions: [
+            { question: 'Could you walk through your experience relevant to this role?' },
+          ],
+        };
+      }
+
+      const extractedSkills = (parsedData.requirements || []).map((r) => ({
+        name: r.title || r.name,
+        priority: r.weight || r.priority || 'required',
+      }));
+
+      const extractedQuestions = (parsedData.suggestedQuestions || []).map((q) => ({
+        text: q.question || q.text,
+        category: 'technical',
+        maxFollowUps: 1,
+      }));
+
+      const extractedSummary = `${parsedData.title || ''} ${parsedData.description || ''} ${extractedSkills.map((s) => s.name).join(' ')}`;
+      const overlap = computeContentOverlap(extractedSummary, trimmed);
+
+      setImportReviewData({
+        title: parsedData.title || 'Pasted Position',
+        description: parsedData.description || '',
+        skills: extractedSkills,
+        questions: extractedQuestions,
+        criteria: [],
+        provenance: 'pasted',
+        overlapRatio: overlap.ratio,
+        overlapVerified: overlap.verified,
+      });
+      setIsImportReviewOpen(true);
+    } catch (err) {
+      setImportError(err.message || 'Failed to parse pasted job posting.');
+    } finally {
+      setIsImportLoading(false);
+    }
   };
 
   const handleApplyImportedRole = () => {
@@ -141,19 +247,38 @@ export default function JobConfig() {
     setSkills(createdSkills);
 
     // Map extracted questions with skill linkages
-    const createdQuestions = importReviewData.questions.map((q, idx) =>
+    const questionsToApply =
+      importReviewData.questions && importReviewData.questions.length > 0
+        ? importReviewData.questions
+        : [
+            {
+              text: `Can you describe your experience with ${createdSkills[0]?.name || 'the required competencies'} in a production setting?`,
+              category: 'technical',
+              maxFollowUps: 1,
+            },
+          ];
+
+    const createdQuestions = questionsToApply.map((q, idx) =>
       createQuestion({
         text: q.text,
-        category: q.category,
+        category: q.category || 'technical',
         order: idx,
-        maxFollowUps: q.maxFollowUps,
+        maxFollowUps: q.maxFollowUps ?? 1,
         relatedSkills: createdSkills.slice(0, 2).map((s) => s.id),
       })
     );
     setQuestions(createdQuestions);
 
     // Map criteria
-    const createdCriteria = importReviewData.criteria.map((c) =>
+    const criteriaToApply =
+      importReviewData.criteria && importReviewData.criteria.length > 0
+        ? importReviewData.criteria
+        : createdSkills.map((s) => ({
+            name: `${s.name} Proficiency`,
+            description: `Demonstrates verified capability in ${s.name}.`,
+          }));
+
+    const createdCriteria = criteriaToApply.map((c) =>
       createCriterion({
         name: c.name,
         description: c.description,
@@ -164,7 +289,7 @@ export default function JobConfig() {
 
     setIsImportReviewOpen(false);
     setIsImportPanelOpen(false);
-    setImportSuccessBanner(`Successfully imported "${importReviewData.title}" from LinkedIn.`);
+    setImportSuccessBanner(`Successfully imported "${importReviewData.title}".`);
     setTimeout(() => setImportSuccessBanner(''), 6000);
   };
 
@@ -462,35 +587,101 @@ export default function JobConfig() {
 
           {isImportPanelOpen && (
             <div className="linkedin-import-box__body">
-              <div className="linkedin-input-row">
-                <div className="linkedin-input-wrapper">
-                  <Input
-                    id="linkedin-url-input"
-                    placeholder="https://www.linkedin.com/jobs/view/..."
-                    value={linkedinUrl}
-                    onChange={(e) => {
-                      setLinkedinUrl(e.target.value);
-                      setImportError('');
-                    }}
-                    error={importError}
-                    hint="Accepts public LinkedIn job URLs (e.g., https://www.linkedin.com/jobs/view/123456789)"
-                  />
-                </div>
+              <div className="import-mode-tabs" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
                 <Button
-                  id="submit-linkedin-import-btn"
+                  id="tab-url-import-btn"
                   type="button"
-                  variant="primary"
-                  disabled={isImportLoading}
-                  onClick={handleStartLinkedInImport}
+                  size="sm"
+                  variant={importMode === 'url' ? 'primary' : 'ghost'}
+                  onClick={() => {
+                    setImportMode('url');
+                    setImportError('');
+                  }}
                 >
-                  {isImportLoading ? 'Analyzing Posting...' : 'Analyze & Review'}
+                  LinkedIn URL
+                </Button>
+                <Button
+                  id="tab-paste-import-btn"
+                  type="button"
+                  size="sm"
+                  variant={importMode === 'paste' ? 'primary' : 'ghost'}
+                  onClick={() => {
+                    setImportMode('paste');
+                    setImportError('');
+                  }}
+                >
+                  Paste Job Description
                 </Button>
               </div>
 
+              {importMode === 'url' ? (
+                <div className="linkedin-input-row">
+                  <div className="linkedin-input-wrapper">
+                    <Input
+                      id="linkedin-url-input"
+                      placeholder="https://www.linkedin.com/jobs/view/..."
+                      value={linkedinUrl}
+                      onChange={(e) => {
+                        setLinkedinUrl(e.target.value);
+                        setImportError('');
+                      }}
+                      error={importError}
+                      hint="Accepts public LinkedIn job URLs (e.g., https://www.linkedin.com/jobs/view/123456789)"
+                    />
+                  </div>
+                  <Button
+                    id="submit-linkedin-import-btn"
+                    type="button"
+                    variant="primary"
+                    disabled={isImportLoading}
+                    onClick={handleStartLinkedInImport}
+                  >
+                    {isImportLoading ? 'Analyzing Posting...' : 'Analyze & Review'}
+                  </Button>
+                </div>
+              ) : (
+                <div className="paste-input-stack" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <textarea
+                    id="paste-job-textarea"
+                    rows={6}
+                    placeholder="Paste the full job posting description here..."
+                    value={pastedJobText}
+                    onChange={(e) => {
+                      setPastedJobText(e.target.value);
+                      setImportError('');
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      borderRadius: '6px',
+                      border: '1px solid var(--color-border, #cbd5e1)',
+                      fontFamily: 'inherit',
+                      fontSize: '0.875rem',
+                    }}
+                  />
+                  {importError && (
+                    <span className="input-error" style={{ color: '#ef4444', fontSize: '0.85rem' }}>
+                      {importError}
+                    </span>
+                  )}
+                  <div>
+                    <Button
+                      id="submit-paste-import-btn"
+                      type="button"
+                      variant="primary"
+                      disabled={isImportLoading}
+                      onClick={handleStartPasteImport}
+                    >
+                      {isImportLoading ? 'Extracting Specifications...' : 'Parse & Extract Specifications'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {isImportLoading && (
-                <div className="linkedin-loading-indicator" role="status">
+                <div className="linkedin-loading-indicator" role="status" style={{ marginTop: '0.75rem' }}>
                   <span className="loading-spinner" />
-                  <span>Connecting to LinkedIn posting and extracting structured competencies...</span>
+                  <span>Connecting to AI parser and extracting structured competencies...</span>
                 </div>
               )}
             </div>
@@ -850,11 +1041,25 @@ export default function JobConfig() {
       >
         {importReviewData && (
           <div className="import-review-stack">
-            <div className="import-review-notice">
-              <strong>Honest Client-Side Parsing: </strong>
-              Direct browser scraping of LinkedIn is restricted by browser CORS security policies without a backend scraper.
-              This structured configuration has been extracted from the posting metadata and verified role criteria.
-            </div>
+            {importReviewData.overlapRatio !== undefined && (
+              <div
+                className="import-review-notice"
+                style={{
+                  background: importReviewData.overlapVerified ? '#f0fdf4' : '#fffbeb',
+                  border: `1px solid ${importReviewData.overlapVerified ? '#86efac' : '#fde68a'}`,
+                  color: importReviewData.overlapVerified ? '#166534' : '#92400e',
+                  padding: '0.75rem',
+                  borderRadius: '6px',
+                  marginBottom: '1rem',
+                }}
+              >
+                <strong>Content Overlap Verification: </strong>
+                {Math.round(importReviewData.overlapRatio * 100)}% word overlap with source text.
+                {importReviewData.overlapVerified
+                  ? ' High fidelity verified (≥70%).'
+                  : ' Caution: low direct word overlap (<70%). Review specifications carefully.'}
+              </div>
+            )}
 
             <div className="import-review-field">
               <label className="import-review-label">Extracted Position Title</label>
