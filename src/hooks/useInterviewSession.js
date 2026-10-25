@@ -50,6 +50,7 @@ export function useInterviewSession(job, options = {}) {
 
   return {
     state,
+    sessionRecord: controller?.getSessionRecord() || null,
     hasConsented: controller?.hasConsented || false,
     currentQuestion: controller?.getCurrentQuestion() || null,
     activePrompt: controller?.getActivePrompt() || null,

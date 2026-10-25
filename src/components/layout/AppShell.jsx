@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { HomeIcon, BriefcaseIcon, MenuIcon } from '../ui/Icons.jsx';
+import { HomeIcon, BriefcaseIcon, ClipboardIcon, MenuIcon } from '../ui/Icons.jsx';
 
 /**
  * Application shell with sidebar navigation, header, and content area.
@@ -17,16 +17,20 @@ const NAV_ITEMS = [
   {
     section: 'Recruitment',
     links: [
-      { to: '/jobs', label: 'Job Positions', icon: BriefcaseIcon },
+      { to: '/positions', label: 'Positions', icon: BriefcaseIcon },
+      { to: '/interviews', label: 'Completed Interviews', icon: ClipboardIcon },
     ],
   },
 ];
 
 /** Map route paths to page titles */
 const PAGE_TITLES = {
-  '/': 'Dashboard',
-  '/jobs': 'Job Positions',
-  '/jobs/new': 'Create Job Position',
+  '/': 'Operational Overview',
+  '/positions': 'Positions Directory',
+  '/positions/new': 'Create Position',
+  '/jobs': 'Positions Directory',
+  '/jobs/new': 'Create Position',
+  '/interviews': 'Completed Interviews',
 };
 
 export default function AppShell() {
@@ -119,7 +123,8 @@ export default function AppShell() {
  */
 function getPageTitle(pathname) {
   if (PAGE_TITLES[pathname]) return PAGE_TITLES[pathname];
-  if (pathname.match(/^\/jobs\/[^/]+\/edit$/)) return 'Edit Job Position';
-  if (pathname.match(/^\/jobs\/[^/]+$/)) return 'Job Details';
+  if (pathname.match(/^\/positions\/[^/]+$/)) return 'Position Details & Criteria';
+  if (pathname.match(/^\/jobs\/[^/]+(\/edit)?$/)) return 'Position Details & Criteria';
+  if (pathname.match(/^\/interviews\/[^/]+$/)) return 'Interview Report';
   return 'HirePilot AI';
 }

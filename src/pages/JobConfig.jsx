@@ -229,6 +229,7 @@ export default function JobConfig() {
       order: questions.length,
       maxFollowUps: Number(questionMaxFollowUps),
       relatedSkills: questionSkills,
+      requirementIds: questionSkills,
     });
 
     setQuestions([...questions, newQ]);
@@ -961,7 +962,9 @@ export default function JobConfig() {
 
           {skills.length > 0 && (
             <div className="skill-selector-group">
-              <label className="input__label">Mapped Skills (Optional)</label>
+              <label className="input__label">
+                Mapped Requirements / Skills (Optional — unmapped questions reported as Unmapped)
+              </label>
               <div className="skill-selector-chips">
                 {skills.map((s) => {
                   const isSelected = questionSkills.includes(s.id);

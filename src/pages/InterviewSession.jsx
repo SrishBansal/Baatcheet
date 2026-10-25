@@ -34,7 +34,17 @@ export default function InterviewSession() {
   // useInterviewSession lists options.interviewId in its useEffect dependency array; an inline
   // object literal with Date.now() produces a new value on every render, which causes the effect
   // to re-run, destroying and recreating the InterviewController on every forceUpdate() call.
-  const interviewIdRef = React.useRef(`session-${jobId}-${Date.now()}`);
+  const activeSessionKey = `hirepilot:active_session:${jobId}`;
+  const interviewIdRef = React.useRef(
+    (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(activeSessionKey)) ||
+      `session-${jobId}-${Date.now()}`
+  );
+
+  useEffect(() => {
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem(activeSessionKey, interviewIdRef.current);
+    }
+  }, [activeSessionKey]);
 
   const session = useInterviewSession(job, { interviewId: interviewIdRef.current });
 
@@ -53,7 +63,7 @@ export default function InterviewSession() {
   }
 
   // 1. Consent Screen (Before interview starts)
-  if (!session.hasConsented) {
+  if (!session.hasConsented && session.state !== 'COMPLETED' && session.state !== 'ABORTED') {
     return (
       <div className="interview-container">
         <div className="interview-consent-card">
@@ -133,7 +143,7 @@ export default function InterviewSession() {
   }
 
   // 2. Completed State
-  if (session.state === 'COMPLETED') {
+  if (session.state === 'COMPLETED' || session.sessionRecord?.status === 'completed') {
     return (
       <div className="interview-container">
         <div className="interview-completion-card">
@@ -143,28 +153,8 @@ export default function InterviewSession() {
           <h1 className="completion-title">Interview Completed</h1>
           <p className="completion-subtitle">
             Thank you for completing the screening interview for <strong>{job.title}</strong>.
-            Your verified transcript has been recorded and submitted to the recruiting team for review.
+            Your responses have been recorded and submitted to the recruiting team for review.
           </p>
-
-          <div className="completion-summary">
-            <h3>Transcript Summary ({session.transcript.length} turns)</h3>
-            <div className="transcript-list">
-              {session.transcript.map((turn) => (
-                <div
-                  key={turn.id}
-                  className={`transcript-item transcript-item--${turn.role} ${turn.skipped ? 'transcript-item--skipped' : ''}`}
-                >
-                  <div className="transcript-item__meta">
-                    <strong>{turn.role === 'interviewer' ? 'HirePilot' : 'You'}</strong>
-                    {turn.skipped && <Badge variant="draft" size="sm">Skipped</Badge>}
-                  </div>
-                  <p className="transcript-item__text">
-                    {turn.text || turn.recognizedText || (turn.skipped ? 'Question skipped by candidate.' : '')}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
 
           <div className="completion-actions">
             <Button id="completion-dashboard-btn" variant="primary" onClick={() => navigate('/')}>
@@ -177,37 +167,15 @@ export default function InterviewSession() {
   }
 
   // 3. Aborted State
-  if (session.state === 'ABORTED') {
+  if (session.state === 'ABORTED' || session.sessionRecord?.status === 'aborted') {
     return (
       <div className="interview-container">
         <div className="interview-completion-card">
           <h1 className="completion-title">Interview Ended</h1>
           <p className="completion-subtitle">
-            You exited the interview session for <strong>{job.title}</strong> before completing
-            all questions. Responses recorded so far are available in the session transcript below.
-            This session is not persisted — returning to the dashboard will end the session.
+            You exited the interview session for <strong>{job.title}</strong>.
+            The responses provided prior to exiting have been saved for the hiring team.
           </p>
-          {session.transcript.length > 0 && (
-            <div className="completion-summary">
-              <h3>Recorded Responses ({session.transcript.filter((t) => t.role === 'candidate').length} answers)</h3>
-              <div className="transcript-list">
-                {session.transcript.map((turn) => (
-                  <div
-                    key={turn.id}
-                    className={`transcript-item transcript-item--${turn.role} ${turn.skipped ? 'transcript-item--skipped' : ''}`}
-                  >
-                    <div className="transcript-item__meta">
-                      <strong>{turn.role === 'interviewer' ? 'HirePilot' : 'You'}</strong>
-                      {turn.skipped && <Badge variant="draft" size="sm">Skipped</Badge>}
-                    </div>
-                    <p className="transcript-item__text">
-                      {turn.text || turn.recognizedText || (turn.skipped ? 'Question skipped by candidate.' : '')}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
           <div className="completion-actions">
             <Button variant="primary" onClick={() => navigate('/')}>
               Return to Dashboard

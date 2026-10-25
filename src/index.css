@@ -206,11 +206,23 @@ a:hover {
 }
 
 /* --------------------------------
-   4. Focus styles (accessibility)
+   4. Focus & Accessibility styles
    -------------------------------- */
 :focus-visible {
-  outline: 2px solid var(--color-border-focus);
+  outline: 2px solid var(--color-primary-600);
   outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(74, 96, 232, 0.2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* --------------------------------

@@ -398,6 +398,20 @@
 - **Rationale:** Prevents model hallucination from contaminating candidate evaluation records and guarantees that every displayed quote is factual evidence.
 - **Requirements affected:** Checkpoint 5, ADR-020.
 
+### ADR-029: Information architecture, dedicated positions directory, and operational dashboard
+
+- **Status:** Accepted
+- **Date:** 2026-10-25
+- **Context:** The application previously conflated the executive dashboard with the job editing and configuration forms. Each product surface required dedicated information architecture and distinct responsive layouts.
+- **Decision:**
+  - **Operational Dashboard (`/`):** Purely operational overview derived from stored data only: active positions, interviews in progress, completed awaiting review, total screened candidates, positions needing attention (missing questions/requirements or failed analyses), and chronological activity timeline. Zero job-editing forms.
+  - **Positions Directory (`/positions`):** Dense searchable and filterable table providing status, interview counts, last activity timestamps, and direct configuration/interview actions.
+  - **Position Editor (`/positions/:id` and `/positions/new`):** Dedicated sectioned workflow with save and validation feedback.
+  - **Backward Compatibility:** Maintained redirects from `/jobs`, `/jobs/new`, and `/jobs/:id` to `/positions*`.
+  - **Design Tokens & Accessibility:** Hardened focus ring (`:focus-visible`), `prefers-reduced-motion` global media query, and mobile reflow down to 360px viewport widths.
+- **Rationale:** Establishes clear separation of concerns across operational overview, pipeline management, and candidate evaluation surfaces.
+- **Requirements affected:** Checkpoint 6.
+
 ---
 
 ## Provisional Decisions
