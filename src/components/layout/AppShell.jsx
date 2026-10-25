@@ -61,7 +61,7 @@ export default function AppShell() {
       {/* Sidebar */}
       <aside className={`app-sidebar ${sidebarOpen ? 'app-sidebar--open' : ''}`}>
         <div className="app-sidebar__brand">
-          <div className="app-sidebar__logo" aria-hidden="true">HP</div>
+          <div className="app-sidebar__logo" aria-hidden="true">B</div>
           <div>
             <div className="app-sidebar__title">Baatcheet</div>
             <div className="app-sidebar__subtitle">AI Screening</div>
@@ -91,7 +91,8 @@ export default function AppShell() {
         </nav>
 
         <div className="app-sidebar__footer">
-          <span className="app-sidebar__version">v0.1.0 — Phase 1</span>
+          <span className="app-sidebar__version">Recruiter workspace</span>
+          <span className="ai-status-chip app-sidebar__ai-status">{ai?.error ? 'Server not reachable' : ai?.geminiConfigured ? `AI: Gemini connected (${ai.model || 'Gemini'})` : 'AI: NOT configured'}</span>
         </div>
       </aside>
 
@@ -107,9 +108,7 @@ export default function AppShell() {
             <MenuIcon />
           </button>
           <h1 className="app-header__title">{pageTitle}</h1>
-          <div className="app-header__actions">
-            <span className="ai-status-chip">{ai?.error ? 'Server not reachable' : ai?.geminiConfigured ? `AI: Gemini connected (${ai.model || 'Gemini'})` : 'AI: NOT configured. Add GEMINI_API_KEY to .env.local'}</span>
-          </div>
+          <div className="app-header__actions" />
         </header>
 
         <main className="app-content">
