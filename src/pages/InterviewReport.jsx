@@ -14,6 +14,9 @@ import {
 import { formatRelativeTime } from '../utils/time.js';
 import { computeReportData } from '../utils/reportData.js';
 import { orchestrateAnalysis } from '../analysis/orchestrator.js';
+import { makeReport, health } from '../data/engineApi.js';
+import { toEngineJob } from '../engine/engineJob.js';
+import GeminiReport from './GeminiReport.jsx';
 import './InterviewReport.css';
 
 export default function InterviewReport() {
@@ -56,6 +59,13 @@ export default function InterviewReport() {
       setSession(null);
     }
   }, [sessionId]);
+
+  useEffect(() => {
+    if (!session || !['completed', 'aborted'].includes(session.status) || session.analysis?.status === 'complete' || !session.turns?.some((t) => t.answer?.finalText)) return;
+    makeReport({ job: toEngineJob(session.jobSnapshot), transcript: session.turns.flatMap((t) => [{ role: 'interviewer', text: t.text, action: t.action }, ...(t.answer?.finalText ? [{ role: 'candidate', text: t.answer.finalText }] : [])]) })
+      .then((analysis) => { const updated = { ...session, analysis: { status: 'complete', providerId: 'gemini', providerKind: 'semantic', generatedAt: new Date().toISOString(), ...analysis } }; store.sessions.save(updated); setSession(updated); })
+      .catch((err) => { const updated = { ...session, analysis: { ...session.analysis, status: 'failed', error: err.message || 'server_error' } }; store.sessions.save(updated); setSession(updated); });
+  }, [session]);
 
   const handleRetryAnalysis = async () => {
     if (!session) return;
@@ -101,6 +111,7 @@ export default function InterviewReport() {
 
   const { jobSnapshot, turns = [], analysis = {} } = session;
   const requirements = jobSnapshot?.requirements || [];
+  if (!turns.some((t) => t.answer?.finalText)) return <div className="interview-report-page"><p>No answers were recorded; nothing to analyze.</p></div>;
   const questions = jobSnapshot?.questions || [];
 
   // Delegate all report computation to the pure utility (no inline logic)
@@ -264,6 +275,8 @@ export default function InterviewReport() {
           </div>
         )}
       </section>
+
+      {analysis.providerId === 'gemini' && analysis.status === 'complete' && <GeminiReport analysis={analysis} turns={turns} />}
 
       {/* Executive Summary (Computed Facts Only) */}
       <section className="report-section">
