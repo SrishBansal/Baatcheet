@@ -19,13 +19,15 @@ import {
   AnalysisProvider,
   DeterministicTranscriptProvider,
   ServerSemanticAnalysisProvider,
+  GeminiAnalysisProvider,
   runSessionAnalysis,
   RequirementAssessmentStatus,
 } from './provider.js';
 
 export const PROVIDER_ID = Object.freeze({
   DETERMINISTIC: 'deterministic-transcript-v1',
-  SERVER_SEMANTIC: 'server-semantic-v1', // future LLM-backed server provider
+  SERVER_SEMANTIC: 'server-semantic-v1',
+  GEMINI: 'gemini-1.5-flash',
 });
 
 /* ------------------------------------------------------------------
@@ -86,7 +88,15 @@ registerProvider({
   id: PROVIDER_ID.SERVER_SEMANTIC,
   kind: 'semantic',
   requiresServer: true,
-  factory: () => new ServerSemanticAnalysisProvider(),
+  factory: () => new GeminiAnalysisProvider(),
+});
+
+// Register Gemini provider
+registerProvider({
+  id: PROVIDER_ID.GEMINI,
+  kind: 'semantic',
+  requiresServer: true,
+  factory: () => new GeminiAnalysisProvider(),
 });
 
 /* ------------------------------------------------------------------

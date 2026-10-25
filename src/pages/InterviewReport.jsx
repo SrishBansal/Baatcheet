@@ -237,6 +237,32 @@ export default function InterviewReport() {
             <strong>Evidence Validator Notice:</strong> {analysis.rejectedEvidenceCount} evidence quote(s) emitted by the provider were rejected and excluded because they did not exactly match recorded candidate responses.
           </div>
         )}
+
+        {session.status === 'aborted' && (
+          <div
+            className="report-banner report-banner--warning"
+            role="region"
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginTop: '0.75rem' }}
+          >
+            <div>
+              <div className="banner-title">
+                <strong>Session Aborted Early</strong>
+              </div>
+              <p className="banner-desc" style={{ margin: 0 }}>
+                Candidate exited before completing all questions. Recorded answers prior to exit are preserved.
+              </p>
+            </div>
+            <Button
+              id="run-aborted-analysis-btn"
+              variant="primary"
+              size="sm"
+              onClick={handleRetryAnalysis}
+              disabled={isRetrying}
+            >
+              {isRetrying ? 'Running Analysis...' : 'Run Analysis on Recorded Responses'}
+            </Button>
+          </div>
+        )}
       </section>
 
       {/* Executive Summary (Computed Facts Only) */}

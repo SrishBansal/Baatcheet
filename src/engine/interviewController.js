@@ -788,7 +788,6 @@ export class InterviewController {
       this.sessionRecord.status = SessionStatus.ABORTED;
       this.sessionRecord.endedAt = new Date().toISOString();
       this._persistSession();
-      this._executeAnalysis();
     }
 
     this.stateMachine.transition(InterviewEvent.ABORT);

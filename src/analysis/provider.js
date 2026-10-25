@@ -160,6 +160,124 @@ export class ServerSemanticAnalysisProvider extends AnalysisProvider {
 }
 
 /**
+ * Gemini-backed semantic analysis provider.
+ * Calls /api/analysis/session, then /api/verify-evidence to verify candidate evidence quotes.
+ * If evidence verification fails, unverified quotes are rejected before code validation.
+ * Falls back gracefully to DeterministicTranscriptProvider if the server call fails.
+ */
+export class GeminiAnalysisProvider extends AnalysisProvider {
+  constructor(options = {}) {
+    super({
+      providerId: options.providerId || 'gemini-1.5-flash',
+      providerKind: 'semantic',
+    });
+    this.endpoint = options.endpoint || SERVER_ANALYSIS_ENDPOINT;
+    this.verifyEndpoint = options.verifyEndpoint || '/api/verify-evidence';
+    this.fetchFn = options.fetchFn || (typeof fetch !== 'undefined' ? fetch : null);
+    this.fallbackProvider = options.fallbackProvider || new DeterministicTranscriptProvider();
+  }
+
+  async analyze(session) {
+    if (!session) throw new Error('[GeminiAnalysisProvider] session is required.');
+    if (!this.fetchFn) throw new Error('[GeminiAnalysisProvider] fetch is not available in this environment.');
+
+    const body = buildAnalysisRequest(session);
+    let res;
+    try {
+      res = await this.fetchFn(this.endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      console.warn(`[GeminiAnalysisProvider] Server call failed: ${err.message}. Falling back to deterministic.`);
+      return await this.fallbackProvider.analyze(session);
+    }
+
+    if (!res.ok) {
+      console.warn(`[GeminiAnalysisProvider] Server returned HTTP ${res.status}. Falling back to deterministic.`);
+      return await this.fallbackProvider.analyze(session);
+    }
+
+    const raw = await res.json();
+    const data = raw.data || raw;
+
+    const statusMap = {
+      met: RequirementAssessmentStatus.DEMONSTRATED,
+      partially_met: RequirementAssessmentStatus.PARTIALLY_DEMONSTRATED,
+      unmet: RequirementAssessmentStatus.INSUFFICIENT_EVIDENCE,
+      unassessed: RequirementAssessmentStatus.NOT_ASSESSED,
+      'Demonstrated': RequirementAssessmentStatus.DEMONSTRATED,
+      'Partially demonstrated': RequirementAssessmentStatus.PARTIALLY_DEMONSTRATED,
+      'Insufficient evidence': RequirementAssessmentStatus.INSUFFICIENT_EVIDENCE,
+      'Not assessed': RequirementAssessmentStatus.NOT_ASSESSED,
+    };
+
+    const requirements = (data.requirementEvaluations || data.requirements || []).map((r) => {
+      const mappedStatus = statusMap[r.status] || RequirementAssessmentStatus.NOT_ASSESSED;
+      return {
+        requirementId: r.requirementId || r.id,
+        requirementName: r.requirementName || r.title || r.name || '',
+        priority: r.priority || 'required',
+        status: mappedStatus,
+        quotes: Array.isArray(r.evidenceQuotes) ? r.evidenceQuotes : (Array.isArray(r.quotes) ? r.quotes : []),
+        notes: r.reasoning || r.notes || '',
+        reasoning: r.reasoning || r.notes || '',
+      };
+    });
+
+    const candidateQuotes = requirements.flatMap((r) => r.quotes || []);
+
+    if (candidateQuotes.length > 0) {
+      try {
+        const transcriptText = (session.turns || [])
+          .filter((t) => t.answer?.finalText && !t.skipped)
+          .map((t) => t.answer.finalText)
+          .join('\n');
+
+        const verifyRes = await this.fetchFn(this.verifyEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            quotes: candidateQuotes,
+            transcriptText,
+          }),
+        });
+
+        if (verifyRes.ok) {
+          const verifyJson = await verifyRes.json();
+          const verifyData = verifyJson.data || verifyJson;
+          const invalidQuoteSet = new Set(
+            (verifyData.results || [])
+              .filter((r) => !r.found || !r.exactMatch)
+              .map((r) => r.quote)
+          );
+
+          if (invalidQuoteSet.size > 0) {
+            requirements.forEach((req) => {
+              req.quotes = (req.quotes || []).filter((q) => !invalidQuoteSet.has(q));
+            });
+          }
+        }
+      } catch {
+        // If verify endpoint is unavailable, code-enforced validateEvidenceQuotes will catch invalid quotes
+      }
+    }
+
+    return {
+      status: 'complete',
+      providerId: this.providerId,
+      providerKind: this.providerKind,
+      generatedAt: new Date().toISOString(),
+      summary: data.overallSummary || data.summary || '',
+      recommendation: data.recommendation || 'hold',
+      contradictions: Array.isArray(data.contradictions) ? data.contradictions : [],
+      requirements,
+    };
+  }
+}
+
+/**
  * Normalize whitespace in strings for robust exact-substring checking.
  * @param {string} str
  * @returns {string}
