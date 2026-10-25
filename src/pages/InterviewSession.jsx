@@ -359,6 +359,36 @@ export default function InterviewSession() {
 
       {/* Main active question card */}
       <main className="live-main">
+        {/* State line */}
+        <div className="interview-state-line" role="status" aria-label={`Current state: ${session.state}`}>
+          <span className={`state-line-dot state-line-dot--${session.state.toLowerCase()}`} />
+          <span className="state-line-label">
+            {isPaused
+              ? 'Interview Paused'
+              : isSpeaking
+              ? 'Interviewer Speaking'
+              : isListening
+              ? 'Listening for Candidate Answer'
+              : isDeciding
+              ? 'Evaluating Response & Thinking…'
+              : 'Processing'}
+          </span>
+        </div>
+
+        {/* Real-time Caption Box */}
+        <div className="live-caption-box" role="region" aria-label="Live Captions" aria-live="polite">
+          <span className="caption-box__label">Live Transcript / Captions</span>
+          <p className="caption-box__text">
+            {session.interimSpeech
+              ? `“${session.interimSpeech}”`
+              : isSpeaking
+              ? `“${session.activePrompt?.text || ''}”`
+              : isListening
+              ? 'Awaiting candidate speech or manual input...'
+              : 'Captions will appear here when speaking or listening.'}
+          </p>
+        </div>
+
         {session.speechError && (
           <div className="alert alert--danger" role="alert">
             {session.speechError}
