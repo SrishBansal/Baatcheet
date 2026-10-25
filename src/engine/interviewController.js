@@ -73,7 +73,7 @@ export class InterviewController {
     // Session flags
     this.hasConsented = false;
     this.allowTyping = this.job.settings?.allowTyping === true;
-    this.inputMode = 'voice';
+    this.inputMode = !this.capabilities.hasSpeechRecognition && this.allowTyping ? 'text' : 'voice';
     this._checksUsed = 0;
     this._postCheckTimer = null;
     this._awaitingDoneCheck = false;

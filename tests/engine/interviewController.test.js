@@ -195,7 +195,7 @@ describe('InterviewController', () => {
     };
 
     const controller = new InterviewController({
-      job: sampleJob,
+      job: { ...sampleJob, settings: { allowTyping: true } },
       speechRecognizer: mockRecognizer,
       speechSynthesizer: mockSynthesizer,
       capabilities: textOnlyCapabilities,
@@ -359,7 +359,7 @@ describe('InterviewController', () => {
   it('handles microphone permission denial by switching automatically to text mode', () => {
     let capturedError = null;
     const controller = new InterviewController({
-      job: sampleJob,
+      job: { ...sampleJob, settings: { allowTyping: true } },
       speechRecognizer: mockRecognizer,
       speechSynthesizer: mockSynthesizer,
       capabilities,
@@ -394,7 +394,7 @@ describe('InterviewController', () => {
     mockRecognizer.isSupported.mockReturnValue(false);
 
     const controller = new InterviewController({
-      job: sampleJob,
+      job: { ...sampleJob, settings: { allowTyping: true } },
       speechRecognizer: mockRecognizer,
       speechSynthesizer: mockSynthesizer,
       capabilities: unsupportedCapabilities,
@@ -631,4 +631,3 @@ describe('InterviewController', () => {
     expect(capturedError).toContain('Audio playback was unavailable');
   });
 });
-

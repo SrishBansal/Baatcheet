@@ -4,6 +4,9 @@ import { renderToString } from 'react-dom/server';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import InterviewReport from '../../src/pages/InterviewReport.jsx';
 import { store } from '../../src/data/store.js';
+import { makeReport } from '../../src/data/engineApi.js';
+
+vi.mock('../../src/data/engineApi.js', () => ({ makeReport: vi.fn(), health: vi.fn() }));
 
 class LocalStorageMock {
   constructor() {
@@ -128,7 +131,7 @@ describe('InterviewReport Page Rendering', () => {
     expect(html).toContain('voice');
   });
 
-  it('renders aborted interview report with status and unasked questions absent', () => {
+  it('renders zero-answer aborted interview with no analysis call', () => {
     const session = {
       id: 'session-aborted-1',
       jobId: 'job-2',
@@ -167,10 +170,8 @@ describe('InterviewReport Page Rendering', () => {
     store.sessions.save(session);
     const html = renderReport('session-aborted-1');
 
-    expect(html).toContain('Backend Engineer');
-    expect(html).toContain('ABORTED');
-    expect(html).toContain('Skipped by candidate');
-    expect(html).toContain('4m 0s');
+    expect(html).toContain('No answers were recorded; nothing to analyze.');
+    expect(makeReport).not.toHaveBeenCalled();
   });
 
   it('renders failed-analysis report banner with error message while keeping full transcript intact', () => {

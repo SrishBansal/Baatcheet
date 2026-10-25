@@ -117,7 +117,7 @@ describe('Session Recording & Controller Integration', () => {
 
   it('records incremental session at interview start, question presentation, and finalized answer', () => {
     const controller = new InterviewController({
-      job: sampleJob,
+      job: { ...sampleJob, settings: { allowTyping: true } },
       interviewId: 'sess-rec-test-1',
       speechRecognizer: mockRecognizer,
       speechSynthesizer: mockSynthesizer,
