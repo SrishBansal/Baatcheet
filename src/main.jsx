@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import { seedIfEmpty } from './data/synthetic.js';
 import './index.css';
+import './styles/tokens.css';
 import { sessionStore, SessionStatus } from './data/sessions.js';
 
 const activeSessionIds = typeof sessionStorage === 'undefined' ? [] : Object.keys(sessionStorage)

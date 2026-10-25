@@ -1,0 +1,7 @@
+:root { --bg:#f7f8fa; --surface:#ffffff; --border:#e3e6eb; --text:#14181f; --muted:#5b6573; --accent:#3b47c4; --accent-hover:#2f3aa3; --accent-soft:#eceefb; --success:#14804a; --success-soft:#e6f4ec; --warning:#a15c07; --warning-soft:#fdf3e1; --danger:#b42318; --danger-soft:#fdecea; --info:#1d5fc4; --info-soft:#e8f0fc; --radius:6px; --radius-lg:10px; --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; }
+* { box-sizing:border-box; }
+body { background:var(--bg); color:var(--text); font:14px/1.5 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+small { font-size:12px; } h1 { font-size:22px; font-weight:600; } h2 { font-size:16px; font-weight:600; }
+label { font-size:12px; letter-spacing:.04em; } button,input,select,textarea { min-height:36px; font:inherit; }
+:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+@media (prefers-reduced-motion:no-preference) { .listening-pulse { animation:listening-pulse 1.2s ease-in-out infinite; } @keyframes listening-pulse { 50% { opacity:.35; } } }
