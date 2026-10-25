@@ -1,28 +1,22 @@
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { handleApiRequest } from './server/apiHandler.js';
+import { handleApi } from './server/baatcheet-engine.mjs';
 
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '');
+const baatcheetApi = () => ({
+  name: 'baatcheet-api',
+  configureServer(s) {
+    s.middlewares.use(async (req, res, next) => {
+      if (req.url && req.url.startsWith('/api/') && await handleApi(req, res)) return;
+      next();
+    });
+  },
+});
 
+export default defineConfig(() => {
   return {
     plugins: [
+      baatcheetApi(),
       react(),
-      {
-        name: 'hirepilot-api-middleware',
-        configureServer(server) {
-          server.middlewares.use(async (req, res, next) => {
-            if (req.url?.startsWith('/api/')) {
-              const handled = await handleApiRequest(req, res, {
-                apiKey: env.GEMINI_API_KEY,
-                model: env.GEMINI_MODEL,
-              });
-              if (handled) return;
-            }
-            next();
-          });
-        },
-      },
     ],
     test: {
       environment: 'node',
