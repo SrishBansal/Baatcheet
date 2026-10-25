@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "server": "node --env-file=.env.local server/index.js",
     "test": "vitest run",
     "test:watch": "vitest"
   },
