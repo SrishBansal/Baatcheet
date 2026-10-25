@@ -20,7 +20,7 @@ export default function InterviewSession() {
   const { jobId } = useParams();
   const navigate = useNavigate();
 
-  const [job, setJob] = useState(null);
+  const [job, setJob] = useState(() => store.jobs.getById(jobId) || null);
   const [consentChecked, setConsentChecked] = useState(false);
   const [candidateName, setCandidateName] = useState('');
   const [typedAnswer, setTypedAnswer] = useState('');
