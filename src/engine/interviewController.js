@@ -72,6 +72,7 @@ export class InterviewController {
 
     // Session flags
     this.hasConsented = false;
+    this.candidate = null;
     this.allowTyping = this.job.settings?.allowTyping === true;
     this.inputMode = !this.capabilities.hasSpeechRecognition && this.allowTyping ? 'text' : 'voice';
     this._checksUsed = 0;
@@ -327,6 +328,10 @@ export class InterviewController {
     }
   }
 
+  setCandidate(name) {
+    this.candidate = { name: String(name || '').trim() };
+  }
+
   /**
    * Start the live interview session.
    * Requires explicit consent and READY state.
@@ -352,6 +357,7 @@ export class InterviewController {
         id: this.interviewId || `session-${this.job.id}-${Date.now()}`,
         job: this.job,
       });
+      this.sessionRecord.candidate = this.candidate || { name: 'Unnamed candidate' };
       this._persistSession();
     }
 

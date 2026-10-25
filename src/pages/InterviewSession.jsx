@@ -21,6 +21,7 @@ export default function InterviewSession() {
 
   const [job, setJob] = useState(null);
   const [consentChecked, setConsentChecked] = useState(false);
+  const [candidateName, setCandidateName] = useState('');
   const [typedAnswer, setTypedAnswer] = useState('');
   const [isEndModalOpen, setIsEndModalOpen] = useState(false);
   const [showTranscriptDrawer, setShowTranscriptDrawer] = useState(false);
@@ -154,6 +155,8 @@ export default function InterviewSession() {
 
           <div className="interview-consent-body">
             <div className="consent-checkbox-row">
+              <label htmlFor="candidate-name">Your full name</label>
+              <input id="candidate-name" value={candidateName} onChange={(e) => setCandidateName(e.target.value)} />
               <input
                 id="consent-acknowledgement"
                 type="checkbox"
@@ -162,8 +165,8 @@ export default function InterviewSession() {
               />
               <label htmlFor="consent-acknowledgement">
                 {engineHealth?.geminiConfigured === false
-                  ? 'Before you start: Your spoken answers are transcribed and saved as a text transcript. Audio is not stored by this app. Chrome sends your audio to Google\'s speech service for transcription. AI is not configured; no follow-up questions will be generated. The recruiter will see: your full transcript; the questions asked and why. No hiring decision is made automatically. A requirement you were not asked about is marked \'Not assessed\' and is not held against you. You can end the interview at any time.'
-                  : "Before you start: Your spoken answers are transcribed and saved as a text transcript. Audio is not stored by this app. Chrome sends your audio to Google's speech service for transcription. The transcript is also sent to Google Gemini to generate follow-up questions and an assessment. The recruiter will see: your full transcript; an AI-generated assessment of how your answers relate to each job requirement, with quotes from your answers; the questions asked and why. No hiring decision is made automatically. A requirement you were not asked about is marked 'Not assessed' and is not held against you. You can end the interview at any time."}
+                  ? 'Before you start: Your spoken answers are transcribed and saved as a text transcript. Audio is not stored by this app. Chrome sends your audio to Google\'s speech service for transcription. AI is not configured; no follow-up questions will be generated. The recruiter will see: your full transcript; the questions asked and why. No hiring decision is made automatically. A requirement you were not asked about is marked \'Not assessed\' and is not held against you. You can end the interview at any time. Your name is saved with the transcript.'
+                  : "Before you start: Your spoken answers are transcribed and saved as a text transcript. Audio is not stored by this app. Chrome sends your audio to Google's speech service for transcription. The transcript is also sent to Google Gemini to generate follow-up questions and an assessment. The recruiter will see: your full transcript; an AI-generated assessment of how your answers relate to each job requirement, with quotes from your answers; the questions asked and why. No hiring decision is made automatically. A requirement you were not asked about is marked 'Not assessed' and is not held against you. You can end the interview at any time. Your name is saved with the transcript."}
               </label>
             </div>
           </div>
@@ -175,8 +178,9 @@ export default function InterviewSession() {
             <Button
               id="begin-interview-btn"
               variant="primary"
-              disabled={!consentChecked || engineHealth?.geminiConfigured === false}
+              disabled={!consentChecked || candidateName.trim().length < 2 || engineHealth?.geminiConfigured === false}
               onClick={() => {
+                session.setCandidate(candidateName.trim());
                 session.grantConsent();
                 session.startInterview();
               }}

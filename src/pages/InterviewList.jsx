@@ -127,7 +127,7 @@ export default function InterviewList() {
               <div key={session.id} className="session-card">
                 <div className="session-card__left">
                   <div className="session-card__title-row">
-                    <h3 className="session-card__title">{jobTitle}</h3>
+                    <h3 className="session-card__title">{session.candidate?.name || 'Unnamed candidate'} — {jobTitle}</h3>
                     <Badge variant={statusBadgeVariant} size="sm">
                       {statusLabel}
                     </Badge>

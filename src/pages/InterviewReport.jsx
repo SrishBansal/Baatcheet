@@ -48,7 +48,7 @@ export default function InterviewReport() {
   const analysis = session.analysis || {};
   if (!hasAnswers) return <div className="interview-report-page"><p>No answers were recorded; nothing to analyze.</p></div>;
   if (!requirements.length) return <div className="interview-report-page"><p>This interview has no requirements to assess.</p></div>;
-  if (analysis.providerId === 'gemini' && analysis.status === 'complete') return <div className="interview-report-page"><Button size="sm" onClick={run} disabled={running}>Re-run analysis</Button><GeminiReport analysis={analysis} turns={turns} /></div>;
+  if (analysis.providerId === 'gemini' && analysis.status === 'complete') return <div className="interview-report-page"><h1>{session.candidate?.name || 'Unnamed candidate'}</h1><Button size="sm" onClick={run} disabled={running}>Re-run analysis</Button><GeminiReport analysis={analysis} turns={turns} /></div>;
   if (analysis.providerId === 'gemini' && analysis.status === 'failed') return <div className="interview-report-page"><div className="report-banner report-banner--failed" role="alert">{engineErrorMessage(analysis.error)} <small>{analysis.error}</small><Button onClick={run} disabled={running}>{running ? 'Retrying analysis…' : 'Retry analysis'}</Button></div></div>;
   if (configured === false) return <div className="interview-report-page"><p>AI is not configured; no evaluation performed.</p></div>;
   return <div className="interview-report-page"><p>Analyzing interview…</p></div>;

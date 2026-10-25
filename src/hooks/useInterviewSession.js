@@ -70,6 +70,11 @@ export function useInterviewSession(job, options = {}) {
       forceUpdate();
     }, [forceUpdate]),
 
+    setCandidate: useCallback((name) => {
+      controllerRef.current?.setCandidate(name);
+      forceUpdate();
+    }, [forceUpdate]),
+
     startInterview: useCallback(() => {
       controllerRef.current?.startInterview();
       forceUpdate();
