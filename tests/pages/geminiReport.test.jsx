@@ -52,4 +52,17 @@ describe('GeminiReport', () => {
     expect(html).toContain('>Analysis</p>');
     expect(html).toContain('>Transcript</p>');
   });
+
+  it('renders all four independently readable report sections', () => {
+    const html = renderToString(<GeminiReport analysis={{ summary: 'Executive summary', requirements: [{ name: 'System Design', status: 'demonstrated' }] }} turns={[{ text: 'Tell me about yourself' }]} />);
+
+    expect(html).toContain('data-testid="report-assessment-overview"');
+    expect(html).toContain('Assessment Overview');
+    expect(html).toContain('data-testid="report-requirement-analysis"');
+    expect(html).toContain('Requirement Analysis');
+    expect(html).toContain('data-testid="report-transcript"');
+    expect(html).toContain('Full Interview Transcript');
+    expect(html).toContain('data-testid="report-analysis-status"');
+    expect(html).toContain('Analysis Status');
+  });
 });
