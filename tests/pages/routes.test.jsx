@@ -76,7 +76,7 @@ describe('Route Navigation & Backward Compatibility (Checkpoint 6)', () => {
     });
     const html = renderAppAt('/positions');
     expect(html).toContain('Positions');
-    expect(html).toContain('positions-table');
+    expect(html).toContain('positions-grid');
     expect(html).toContain('DevOps Engineer');
   });
 

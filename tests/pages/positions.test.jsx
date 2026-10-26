@@ -51,7 +51,7 @@ describe('Positions Page Rendering (Checkpoint 6)', () => {
     expect(html).toContain('Create Position');
   });
 
-  it('renders dense table with status, questions, sessions, and actions for populated store', () => {
+  it('renders one position card per position with status, questions, sessions, and actions', () => {
     store.jobs.add({
       id: 'job-sec-eng',
       title: 'Cloud Security Architect',
@@ -85,21 +85,19 @@ describe('Positions Page Rendering (Checkpoint 6)', () => {
 
     const html = renderPositions();
 
-    // Table headers
-    expect(html).toContain('Role &amp; Department');
-    expect(html).toContain('Criteria &amp; Questions');
-    expect(html).toContain('Interviews');
-    expect(html).toContain('Last Activity');
+    expect((html.match(/position-card/g) || []).length).toBeGreaterThanOrEqual(2);
 
     // Job rows
     expect(html).toContain('Cloud Security Architect');
     expect(html).toContain('Active');
     expect(html).toMatch(/2.*question/);
-    expect(html).toContain('1</strong> completed');
-    expect(html).toContain('Interview'); // Interview action available for active job with questions
+    expect(html).toContain('1<!-- --> completed');
+    expect(html).toContain('Start interview'); // Active-position card action label
 
     expect(html).toContain('Growth Product Manager');
     expect(html).toContain('Draft');
     expect(html).toContain('Configure');
+    expect(html).toContain('--department-color:var(--dept-product)');
+    expect(html).toContain('--department-color:var(--dept-general)');
   });
 });

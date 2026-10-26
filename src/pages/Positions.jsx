@@ -7,7 +7,7 @@ import EmptyState from '../components/ui/EmptyState.jsx';
 import Input from '../components/ui/Input.jsx';
 import PageHeader from '../components/ui/PageHeader.jsx';
 import SegmentedTabs from '../components/ui/SegmentedTabs.jsx';
-import DataTable from '../components/ui/DataTable.jsx';
+import { deptColor } from '../utils/deptColor.js';
 import {
   BriefcaseIcon,
   PlusIcon,
@@ -145,20 +145,8 @@ export default function Positions() {
           }
         />
       ) : (
-        <DataTable label="Positions directory">
-          <table className="positions-table" aria-label="Positions directory">
-            <thead>
-              <tr>
-                <th scope="col">Role & Department</th>
-                <th scope="col">Status</th>
-                <th scope="col">Criteria & Questions</th>
-                <th scope="col">Interviews</th>
-                <th scope="col">Last Activity</th>
-                <th scope="col" className="positions-table__actions-head">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredJobs.map((job) => {
+        <div className="positions-grid" aria-label="Positions directory">
+          {filteredJobs.map((job) => {
                 const jobSessions = sessionsByJob.get(job.id) || [];
                 const completedCount = jobSessions.filter((s) => s.status === 'completed').length;
                 const inProgressCount = jobSessions.filter((s) => s.status === 'in_progress').length;
@@ -181,50 +169,11 @@ export default function Positions() {
                 if (job.status === 'active') badgeVariant = 'success';
                 else if (job.status === 'closed') badgeVariant = 'warning';
 
-                return (
-                  <tr key={job.id} className="positions-table__row">
-                    <td className="positions-table__cell-title">
-                      <div className="position-title-link" onClick={() => navigate(`/positions/${job.id}`)}>
-                        <strong>{job.title}</strong>
-                      </div>
-                      <div className="position-dept">
-                        {job.department || 'General'} · ID: <span className="position-id-mono">{job.id}</span>
-                      </div>
-                    </td>
-
-                    <td>
-                      <Badge variant={badgeVariant} size="sm">
-                        {job.status === 'closed' && job.closedReason === 'filled' ? 'Filled' : job.status === 'active' ? 'Active' : job.status === 'closed' ? 'Closed' : 'Draft'}
-                      </Badge>
-                    </td>
-
-                    <td>
-                      <span className="metric-chip">
-                        {requirementsCount} req{requirementsCount !== 1 ? 's' : ''}
-                      </span>
-                      <span className="metric-chip metric-chip--subtle">
-                        {questionsCount} question{questionsCount !== 1 ? 's' : ''}
-                      </span>
-                    </td>
-
-                    <td>
-                      <div>
-                        <strong>{completedCount}</strong> completed
-                        {inProgressCount > 0 && (
-                          <span className="in-progress-note"> ({inProgressCount} active)</span>
-                        )}
-                      </div>
-                      <span className="total-sessions-sub">
-                        {jobSessions.length} total session{jobSessions.length !== 1 ? 's' : ''}
-                      </span>
-                    </td>
-
-                    <td className="positions-table__cell-time">
-                      {lastActivityTime ? formatRelativeTime(lastActivityTime) : 'Never'}
-                    </td>
-
-                    <td className="positions-table__cell-actions">
-                      <div className="positions-actions-group">
+                const department = deptColor(job.department);
+                return <article key={job.id} className="position-card" style={{ '--department-color': department.color, '--department-soft': department.soft }} onClick={() => navigate(`/positions/${job.id}`)}>
+                  <div className="position-card__top"><div><h2>{job.title}</h2><p>{job.department || 'General'}</p></div><Badge variant={badgeVariant} size="sm">{job.status === 'closed' && job.closedReason === 'filled' ? 'Filled' : job.status === 'active' ? 'Active' : job.status === 'closed' ? 'Closed' : 'Draft'}</Badge></div>
+                  <div className="position-card__stats"><span>{requirementsCount} requirement{requirementsCount !== 1 ? 's' : ''}</span><span>{questionsCount} question{questionsCount !== 1 ? 's' : ''}</span></div>
+                  <div className="position-card__footer"><div><strong>{completedCount} completed</strong>{inProgressCount > 0 && <span className="position-card__live">{inProgressCount} live</span>}</div><div className="positions-actions-group" onClick={(event) => event.stopPropagation()}>
                         {job.status === 'active' && (
                           <Button
                             variant="secondary"
@@ -245,14 +194,10 @@ export default function Positions() {
                         >
                           Configure
                         </Button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </DataTable>
+                  </div></div>
+                </article>;
+          })}
+        </div>
       )}
     </div>
   );
