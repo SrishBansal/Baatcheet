@@ -1,16 +1,17 @@
 /* ================================================================
-   Operational Recruiter Dashboard — Visual Polish
-   Preserves existing JSX, design tokens, and interactions.
-   Fixes grid overflow, card overlap, and responsive sizing.
+   Baatcheet — Recruiter Dashboard
+   Responsive layout, consistent cards, and overflow protection.
    ================================================================ */
 
 .dashboard-page {
   display: flex;
   flex-direction: column;
-  gap: var(--space-7);
+  gap: var(--space-5);
   width: 100%;
-  max-width: var(--content-max-width);
+  max-width: 100%;
   min-width: 0;
+  flex: 1 1 auto;
+  align-self: stretch;
   box-sizing: border-box;
 }
 
@@ -19,6 +20,13 @@
 .dashboard-page *::after {
   box-sizing: border-box;
 }
+
+.dashboard-page>* {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Header */
 
 .dashboard-header {
   display: flex;
@@ -31,8 +39,8 @@
 
 .dashboard-title {
   margin: var(--space-2) 0 0;
-  font-size: clamp(28px, 3vw, 34px);
-  line-height: 1.15;
+  font-size: clamp(26px, 2.5vw, 34px);
+  line-height: 1.2;
   letter-spacing: -0.035em;
   font-weight: var(--font-bold);
   color: var(--color-text-primary);
@@ -41,10 +49,10 @@
 
 .dashboard-subtitle {
   max-width: 600px;
+  margin: var(--space-2) 0 0;
   font-size: var(--text-sm);
   line-height: 1.65;
   color: var(--color-text-secondary);
-  margin: var(--space-2) 0 0;
   overflow-wrap: anywhere;
 }
 
@@ -58,12 +66,14 @@
 
 .dashboard-header__actions {
   display: flex;
+  align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
-  align-items: center;
   min-width: 0;
   max-width: 100%;
 }
+
+/* Dashboard main columns */
 
 .dashboard-main-grid {
   display: grid;
@@ -82,6 +92,8 @@
   max-width: 100%;
 }
 
+/* General dashboard cards */
+
 .dashboard-card {
   display: flex;
   flex-direction: column;
@@ -92,8 +104,8 @@
   padding: var(--space-5);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  background: var(--surface-primary);
-  box-shadow: 0 2px 8px rgb(36 42 38 / 3%);
+  background: var(--color-bg-surface);
+  box-shadow: var(--shadow-xs);
 }
 
 .dashboard-card__header {
@@ -119,6 +131,8 @@
   font-size: var(--text-xs);
   color: var(--color-text-tertiary);
 }
+
+/* Positions needing attention */
 
 .attention-badge {
   flex-shrink: 0;
@@ -178,8 +192,8 @@
 .attention-item__main strong {
   font-size: var(--text-sm);
   line-height: 1.45;
-  overflow-wrap: anywhere;
   color: var(--color-text-primary);
+  overflow-wrap: anywhere;
 }
 
 .attention-item__desc {
@@ -194,6 +208,8 @@
   max-width: 100%;
 }
 
+/* Quick actions */
+
 .quick-actions-row {
   display: flex;
   gap: var(--space-3);
@@ -201,7 +217,8 @@
   min-width: 0;
 }
 
-/* Metrics: four equal columns that can shrink without overlapping. */
+/* Key metric cards */
+
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -209,30 +226,33 @@
   width: 100%;
   min-width: 0;
   padding: 0;
-  background: var(--surface-primary);
+  background: var(--color-bg-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   overflow: hidden;
-  box-shadow: 0 2px 8px rgb(36 42 38 / 3%);
+  box-shadow: var(--shadow-xs);
 }
 
-.stat-card {
+.dashboard-page .stat-card {
   min-width: 0;
   max-width: 100%;
+  padding: var(--space-5);
   border: 0;
   border-radius: 0;
   background: transparent;
-  padding: var(--space-5);
+  box-shadow: none;
+  overflow-wrap: anywhere;
   transition: background-color var(--transition-fast);
 }
 
-.stat-card+.stat-card {
+.dashboard-page .stat-card+.stat-card {
   border-left: 1px solid var(--color-border);
 }
 
 .stat-card__label {
   font-size: var(--text-xs);
   line-height: 1.5;
+  font-weight: var(--font-medium);
   color: var(--color-text-secondary);
   overflow-wrap: anywhere;
 }
@@ -240,7 +260,7 @@
 .stat-card__value {
   margin-top: var(--space-2);
   font-size: clamp(22px, 2.2vw, 32px);
-  line-height: 1.15;
+  line-height: 1.2;
   letter-spacing: -0.035em;
   font-weight: var(--font-bold);
   color: var(--color-text-primary);
@@ -257,6 +277,7 @@
 }
 
 /* Recent activity */
+
 .activity-timeline {
   display: flex;
   flex-direction: column;
@@ -281,7 +302,7 @@
 }
 
 .activity-item:hover {
-  background-color: var(--surface-secondary);
+  background-color: var(--color-gray-50);
   border-color: var(--color-border);
 }
 
@@ -296,10 +317,10 @@
   justify-content: center;
   width: 38px;
   height: 38px;
-  border-radius: var(--radius-md);
-  background: var(--surface-secondary);
-  color: var(--accent);
   flex-shrink: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-gray-50);
+  color: var(--accent);
 }
 
 .activity-item__icon svg {
@@ -335,24 +356,24 @@
 }
 
 .activity-item__detail {
+  margin-top: 3px;
   font-size: var(--text-xs);
   line-height: 1.5;
   color: var(--color-text-secondary);
-  margin-top: 3px;
   overflow-wrap: anywhere;
 }
 
 .activity-item__time {
+  margin-top: 3px;
   font-size: var(--text-xs);
   color: var(--color-text-tertiary);
-  margin-top: 3px;
 }
 
 .activity-item__chevron {
   width: 16px;
   height: 16px;
-  color: var(--color-text-tertiary);
   flex-shrink: 0;
+  color: var(--color-text-tertiary);
 }
 
 .empty-subtext {
@@ -362,7 +383,8 @@
   overflow-wrap: anywhere;
 }
 
-/* Tablet and narrower desktop screens */
+/* Medium screens */
+
 @media (max-width: 1100px) {
   .dashboard-main-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -372,21 +394,22 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .stat-card {
+  .dashboard-page .stat-card {
     padding: var(--space-4);
   }
 
-  .stat-card:nth-child(3) {
+  .dashboard-page .stat-card:nth-child(3) {
     border-left: 0;
     border-top: 1px solid var(--color-border);
   }
 
-  .stat-card:nth-child(4) {
+  .dashboard-page .stat-card:nth-child(4) {
     border-top: 1px solid var(--color-border);
   }
 }
 
-/* Mobile */
+/* Tablets and mobile */
+
 @media (max-width: 700px) {
   .dashboard-page {
     gap: var(--space-5);
@@ -417,109 +440,41 @@
     align-items: flex-start;
     gap: var(--space-3);
   }
-
-  .activity-item {
-    padding: var(--space-2);
-  }
 }
 
-/* Small mobile: stack metrics and attention actions. */
-@media (max-width: 400px) {
+/* Small phones */
+
+@media (max-width: 480px) {
+  .dashboard-page {
+    gap: var(--space-4);
+  }
+
+  .dashboard-title {
+    font-size: 26px;
+  }
+
   .stats-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .stat-card+.stat-card,
-  .stat-card:nth-child(3),
-  .stat-card:nth-child(4) {
+  .dashboard-page .stat-card+.stat-card {
     border-left: 0;
     border-top: 1px solid var(--color-border);
   }
 
-  .dashboard-card__header {
-    align-items: flex-start;
+  .dashboard-card {
+    padding: var(--space-4);
   }
 
   .attention-item {
-    flex-direction: column;
-    align-items: stretch;
+    flex-wrap: wrap;
   }
 
   .attention-item>button {
-    align-self: flex-start;
-  }
-}
-
-/* Respect reduced-motion preferences. */
-@media (prefers-reduced-motion: reduce) {
-
-  .activity-item,
-  .stat-card {
-    transition: none;
-  }
-}
-
-/* Dashboard-only layout override */
-.dashboard-page {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-}
-
-.dashboard-page .stats-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0;
-  width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-}
-
-.dashboard-page .stat-card {
-  min-width: 0;
-  width: 100%;
-  max-width: 100%;
-  box-sizing: border-box;
-  overflow-wrap: anywhere;
-}
-
-.dashboard-page .dashboard-main-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr);
-  gap: var(--space-5);
-  width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-}
-
-.dashboard-page .dashboard-col,
-.dashboard-page .dashboard-card {
-  min-width: 0;
-  max-width: 100%;
-  box-sizing: border-box;
-}
-
-@media (max-width: 1100px) {
-  .dashboard-page .dashboard-main-grid {
-    grid-template-columns: minmax(0, 1fr);
+    max-width: 100%;
   }
 
-  .dashboard-page .stats-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 700px) {
-  .dashboard-page .dashboard-main-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 400px) {
-  .dashboard-page .stats-grid {
-    grid-template-columns: minmax(0, 1fr);
+  .activity-item {
+    padding: var(--space-2);
   }
 }
