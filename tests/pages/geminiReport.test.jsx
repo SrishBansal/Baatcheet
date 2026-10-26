@@ -43,4 +43,13 @@ describe('GeminiReport', () => {
     expect(html).toContain('width:0%');
     expect((html.match(/This shows which requirements were discussed and how clearly, not a numeric skill score/g) || []).length).toBe(1);
   });
+
+  it('separates analysis from the chronological transcript in stable DOM zones', () => {
+    const html = renderToString(<GeminiReport analysis={{ summary: 'Summary', requirements: [] }} turns={[]} />);
+
+    expect(html).toContain('data-testid="report-analysis"');
+    expect(html).toContain('data-testid="report-transcript"');
+    expect(html).toContain('>Analysis</p>');
+    expect(html).toContain('>Transcript</p>');
+  });
 });

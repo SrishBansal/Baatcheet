@@ -112,6 +112,11 @@ body {
 
   --color-border: var(--color-gray-200);
   --color-border-strong: var(--color-gray-300);
+
+  /* ---- Surface semantic tokens ---- */
+  --surface-sunken: var(--color-gray-900);
+  --surface-secondary: var(--color-gray-100);
+  --border-strong: var(--color-gray-300);
   --color-border-focus: var(--color-primary-400);
   --color-border-error: var(--color-danger-500);
 
@@ -281,7 +286,7 @@ a:hover {
   left: 0;
   bottom: 0;
   width: var(--sidebar-width);
-  background: var(--color-bg-sidebar);
+  background: var(--surface-sunken);
   display: flex;
   flex-direction: column;
   z-index: 100;

@@ -46,7 +46,7 @@ async function callModel(model, system, user, schema, ms) {
   catch { throw new ApiError('gemini_bad_output'); }
 }
 // Model chain: GEMINI_MODEL, then GEMINI_FALLBACK_MODEL (comma-separated), then built-in defaults. All are real Gemini models, never canned text.
-const DEFAULT_CHAIN = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash-lite'];
+const DEFAULT_CHAIN = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-3.5-flash-lite', 'gemini-2.5-flash-lite'];
 const chain = () => [env.GEMINI_MODEL, ...String(env.GEMINI_FALLBACK_MODEL || '').split(','), ...DEFAULT_CHAIN].map((x) => (x || '').trim()).filter((m, i, a) => m && a.indexOf(m) === i);
 const cooldown = new Map(); // model -> time until which it is skipped (429: 10 min, 404: 6 h)
 let lastOk = null;

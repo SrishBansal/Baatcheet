@@ -228,4 +228,22 @@ describe('InterviewReport Page Rendering', () => {
 
     expect(html).toContain('This interview has no requirements to assess.');
   });
+
+  it('routes a completed interview record to the current Gemini report component', () => {
+    store.sessions.save({
+      id: 'session-gemini-report',
+      status: 'completed',
+      jobSnapshot: { title: 'Platform Engineer', requirements: [{ id: 'req-1', name: 'Systems design' }] },
+      turns: [{ text: 'Describe your system.', answer: { finalText: 'I designed it.', inputMode: 'voice' } }],
+      analysis: {
+        status: 'complete', providerId: 'gemini', providerKind: 'semantic', summary: 'Strong evidence.',
+        requirements: [{ id: 'req-1', name: 'Systems design', status: 'demonstrated', reasoning: 'Specific example.' }],
+      },
+    });
+
+    const html = renderReport('session-gemini-report');
+    expect(html).toContain('data-testid="gemini-report"');
+    expect(html).toContain('data-testid="report-analysis"');
+    expect(html).toContain('data-testid="report-transcript"');
+  });
 });
