@@ -39,6 +39,16 @@ describe('baatcheet engine model chain', () => {
     expect(schemas[0].properties.action.enum).toEqual(['FOLLOW_UP', 'NEXT_QUESTION']);
     expect(schemas[1].properties.action.enum).toEqual(['FOLLOW_UP', 'NEXT_QUESTION']);
   });
+  it('keeps FOLLOW_UP reachable across vague consecutive answers', async () => {
+    const schemas = []; vi.stubGlobal('fetch', vi.fn((url, opt) => { const schema = JSON.parse(opt.body).generationConfig.responseSchema; schemas.push(schema); const action = schema.properties.action.enum.includes('FOLLOW_UP') ? 'FOLLOW_UP' : schema.properties.action.enum[0]; return answer({ action, say: `Could you clarify detail ${schemas.length}?`, requirement: 'r', why: 'vague answer' }); }));
+    const transcript = [{ role: 'interviewer', action: 'INTRO', text: 'Q1' }];
+    for (const vague of ['I worked on it.', 'It was challenging.', 'We made improvements.']) {
+      transcript.push({ role: 'candidate', text: vague });
+      const result = await call('/api/turn', { job: { requirements: [{ name: 'r' }] }, transcript });
+      transcript.push({ role: 'interviewer', action: result.body.action, text: result.body.say });
+    }
+    expect(schemas.filter((schema) => schema.properties.action.enum.includes('FOLLOW_UP'))).toHaveLength(2);
+  });
   it('skips cooled-down models on the next request', async () => {
     const models = []; vi.stubGlobal('fetch', vi.fn((url) => { models.push(url.match(/models\/([^:]+)/)[1]); return models.length === 1 ? { ok: false, status: 429 } : answer({ questions: [] }); }));
     const body = { job: { requirements: [{ name: 'r' }] } };

@@ -159,7 +159,7 @@ async function nextTurn({ job, transcript }) {
   if (t.length && cand.length === 0) allowed = ['FOLLOW_UP', 'NEXT_QUESTION'];
   const system = `You are Baatcheet, a warm, professional voice interviewer running a short phone screen. Output JSON.
 - INTRO: 2-3 sentences introducing yourself, the role and its key responsibilities using ONLY the job data, say this is a short screening conversation, then ask the first question.
-- FOLLOW_UP: the last answer lacks a material detail (measurement, their own contribution, outcome, tool, reason, trade-off). Ask exactly ONE short question (a single sentence, no 'and' joining two asks) about the SINGLE most important missing detail, referring to something the candidate actually said. Never repeat an earlier question. Do not follow up if the answer already has enough evidence: use NEXT_QUESTION.
+- Choose FOLLOW_UP whenever the answer is vague, rambling, self-contradictory, missing a concrete personal action or result, or hard to follow — even if it is long. A fluent-sounding answer that never actually says what the candidate personally did is NOT complete. Only choose NEXT_QUESTION when the answer gave a clear, specific, complete account with a concrete detail or outcome. When genuinely torn between the two, prefer FOLLOW_UP once before advancing.
 - NEXT_QUESTION: one short neutral acknowledgement (no praise, no judgement) then ONE new open question about a requirement not yet covered, required ones first.
 - If planned questions are listed, ask the next planned question in natural spoken wording (you may rephrase but keep its meaning); INTRO asks planned question 1; follow-ups stay on the current planned question.
 - WRAP_UP: thank them, say the recruiter will review, no hiring promises, no question.
