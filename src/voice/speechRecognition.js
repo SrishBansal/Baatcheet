@@ -59,7 +59,9 @@ export class BrowserSpeechRecognizer {
     this.recognition = null;
     this.isListening = false;
     this.committedText = '';
+    this.interimText = '';
     this.lastProcessedIndex = 0;
+    this._sessionId = 0;
   }
 
   /**
@@ -92,7 +94,9 @@ export class BrowserSpeechRecognizer {
       return true;
     }
 
+    const sessionId = ++this._sessionId;
     this.committedText = '';
+    this.interimText = '';
     this.lastProcessedIndex = 0;
 
     try {
@@ -103,13 +107,13 @@ export class BrowserSpeechRecognizer {
       this.recognition.interimResults = this.interimResults;
 
       // Bind handlers
-      this.recognition.onstart = this._handleStart.bind(this);
-      this.recognition.onresult = this._handleResult.bind(this);
-      this.recognition.onerror = this._handleError.bind(this);
-      this.recognition.onend = this._handleEnd.bind(this);
+      this.recognition.onstart = () => this._handleStart(sessionId);
+      this.recognition.onresult = (event) => this._handleResult(event, sessionId);
+      this.recognition.onerror = (event) => this._handleError(event, sessionId);
+      this.recognition.onend = () => this._handleEnd(sessionId);
 
       if (typeof this.recognition.onspeechstart !== 'undefined') {
-        this.recognition.onspeechstart = this._handleSpeechStart.bind(this);
+        this.recognition.onspeechstart = () => this._handleSpeechStart(sessionId);
       }
 
       this.recognition.start();
@@ -178,20 +182,23 @@ export class BrowserSpeechRecognizer {
      Internal Event Handlers
      ---------------------------------------------------------------- */
 
-  _handleStart() {
+  _handleStart(sessionId) {
+    if (sessionId !== this._sessionId) return;
     this.isListening = true;
     if (this.onStart) {
       this.onStart();
     }
   }
 
-  _handleSpeechStart() {
+  _handleSpeechStart(sessionId) {
+    if (sessionId !== this._sessionId) return;
     if (this.onSpeechStart) {
       this.onSpeechStart();
     }
   }
 
-  _handleResult(event) {
+  _handleResult(event, sessionId) {
+    if (sessionId !== this._sessionId) return;
     if (!event || !event.results) return;
 
     let interimText = '';
@@ -218,19 +225,24 @@ export class BrowserSpeechRecognizer {
       this.committedText = (this.committedText ? this.committedText + ' ' : '') + newFinalText;
     }
 
+    this.interimText = interimText.trim();
     const currentFullText = (this.committedText ? this.committedText + ' ' : '') + interimText;
 
     if (this.onResult) {
       this.onResult({
         text: currentFullText.trim(),
+        displayText: currentFullText.trim(),
         isFinal: Boolean(newFinalText && !interimText),
-        interimText: interimText.trim(),
+        interimText: this.interimText,
         finalText: this.committedText.trim(),
+        newFinalText: newFinalText.trim(),
+        sessionId,
       });
     }
   }
 
-  _handleError(event) {
+  _handleError(event, sessionId) {
+    if (sessionId !== this._sessionId) return;
     const errorCode = event.error || 'unknown';
     const isPermissionDenied =
       errorCode === 'not-allowed' || errorCode === 'service-not-allowed';
@@ -250,7 +262,8 @@ export class BrowserSpeechRecognizer {
     }
   }
 
-  _handleEnd() {
+  _handleEnd(sessionId) {
+    if (sessionId !== this._sessionId) return;
     this.isListening = false;
     if (this.onEnd) {
       this.onEnd();

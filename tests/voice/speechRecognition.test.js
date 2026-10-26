@@ -134,12 +134,10 @@ describe('BrowserSpeechRecognizer', () => {
       ],
     });
 
-    expect(onResult).toHaveBeenLastCalledWith({
-      text: 'I have experience',
-      isFinal: false,
-      interimText: 'I have experience',
-      finalText: '',
-    });
+    expect(onResult).toHaveBeenLastCalledWith(expect.objectContaining({
+      text: 'I have experience', displayText: 'I have experience', isFinal: false,
+      interimText: 'I have experience', finalText: '', newFinalText: '',
+    }));
 
     // 2. Simulate final result event
     recognizer.recognition.onresult({
@@ -152,12 +150,10 @@ describe('BrowserSpeechRecognizer', () => {
       ],
     });
 
-    expect(onResult).toHaveBeenLastCalledWith({
-      text: 'I have experience with React.',
-      isFinal: true,
-      interimText: '',
-      finalText: 'I have experience with React.',
-    });
+    expect(onResult).toHaveBeenLastCalledWith(expect.objectContaining({
+      text: 'I have experience with React.', displayText: 'I have experience with React.', isFinal: true,
+      interimText: '', finalText: 'I have experience with React.', newFinalText: 'I have experience with React.',
+    }));
   });
 
   it('prevents duplicate final text accumulation when results stream in continuously', () => {
@@ -197,6 +193,30 @@ describe('BrowserSpeechRecognizer', () => {
         finalText: 'First sentence. Second sentence.',
       })
     );
+  });
+
+  it('replaces interim hypotheses and exposes only new final segments', () => {
+    const onResult = vi.fn();
+    const recognizer = new BrowserSpeechRecognizer({ RecognitionConstructor: MockSpeechRecognition, onResult });
+    recognizer.start();
+    recognizer.recognition.onresult({ resultIndex: 0, results: [{ 0: { transcript: 'I led the' }, isFinal: false }] });
+    recognizer.recognition.onresult({ resultIndex: 0, results: [{ 0: { transcript: 'I led the migration' }, isFinal: false }] });
+    expect(onResult).toHaveBeenLastCalledWith(expect.objectContaining({ finalText: '', interimText: 'I led the migration', displayText: 'I led the migration' }));
+    recognizer.recognition.onresult({ resultIndex: 0, results: [{ 0: { transcript: 'I led the migration.' }, isFinal: true }] });
+    expect(onResult).toHaveBeenLastCalledWith(expect.objectContaining({ finalText: 'I led the migration.', interimText: '', newFinalText: 'I led the migration.' }));
+  });
+
+  it('ignores a late result from a prior recognition session', () => {
+    const onResult = vi.fn();
+    const recognizer = new BrowserSpeechRecognizer({ RecognitionConstructor: MockSpeechRecognition, onResult });
+    recognizer.start();
+    const oldSession = recognizer.recognition;
+    recognizer.stop();
+    recognizer.start();
+    oldSession.onresult({ resultIndex: 0, results: [{ 0: { transcript: 'stale words' }, isFinal: true }] });
+    expect(onResult).not.toHaveBeenCalledWith(expect.objectContaining({ text: 'stale words' }));
+    recognizer.recognition.onresult({ resultIndex: 0, results: [{ 0: { transcript: 'fresh words' }, isFinal: true }] });
+    expect(onResult).toHaveBeenLastCalledWith(expect.objectContaining({ finalText: 'fresh words' }));
   });
 
   it('classifies permission denial errors (not-allowed)', () => {

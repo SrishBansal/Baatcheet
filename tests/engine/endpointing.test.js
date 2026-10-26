@@ -149,8 +149,8 @@ describe('CHECKPOINT 2: VoiceTurnEndpointer', () => {
     });
   });
 
-  describe('onRecognitionEnd auto-fire', () => {
-    it('fires immediately when speech existed long enough and recognition ended', () => {
+  describe('onRecognitionEnd commit handoff', () => {
+    it('reports stable speech to the controller without auto-submitting it', () => {
       ep.startTurn();
       // Simulate speech starting by sending a result
       ep.onRecognitionResult({ text: 'my answer', isFinal: false });
@@ -163,8 +163,8 @@ describe('CHECKPOINT 2: VoiceTurnEndpointer', () => {
       ep._micActive = true; // re-arm for onRecognitionEnd path
 
       // Call with draft text present
-      ep.onRecognitionEnd('my answer');
-      expect(onSilenceTimeout).toHaveBeenCalledTimes(1);
+      expect(ep.onRecognitionEnd('my answer')).toEqual(expect.objectContaining({ hasSpeech: true }));
+      expect(onSilenceTimeout).not.toHaveBeenCalled();
     });
 
     it('does NOT fire when draftText is empty', () => {

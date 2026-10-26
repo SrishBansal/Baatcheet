@@ -173,12 +173,12 @@ export class VoiceTurnEndpointer {
     this._cancelNoSpeechTimer();
     this._micActive = false;
 
-    if (!draftText || !draftText.trim()) return;
+    if (!draftText || !draftText.trim()) return { token: this._currentToken, hasSpeech: false };
 
     const elapsed = this._speechStartedAt ? Date.now() - this._speechStartedAt : 0;
-    if (elapsed >= this._minAnswerMs) {
-      this._fireSilenceTimeout(this._currentToken);
-    }
+    // A browser `onend` is not proof that a provisional hypothesis is a complete answer.
+    // The controller owns the final commit decision after it has checked final recognition text.
+    return { token: this._currentToken, hasSpeech: elapsed >= this._minAnswerMs };
   }
 
   hasMinimumSpeech() {

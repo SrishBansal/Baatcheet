@@ -159,6 +159,8 @@ describe('InterviewController', () => {
     controller.startInterview();
     mockSynthesizer._lastCallbacks.onEnd();
     controller.currentAnswerDraft = 'Short answer.';
+    controller.committedAnswerText = 'Short answer.';
+    controller._lastFinalAt = Date.now() - 1000;
     controller._handleSilenceTimeout();
     expect(controller._awaitingDoneCheck).toBe(true);
     expect(vi.getTimerCount()).toBe(1); // speech watchdog; no second silence/check timer is armed
@@ -207,6 +209,55 @@ describe('InterviewController', () => {
     controller.resetStep();
     expect(controller.getSessionRecord().turns).toHaveLength(turns);
     expect(controller.getState()).toBe(InterviewState.LISTENING);
+  });
+
+  it('submits committed final recognition text, never an interim hypothesis', () => {
+    const nextTurn = vi.fn()
+      .mockReturnValueOnce({ action: 'INTRO', say: 'Question one?', questionIndex: 0 })
+      .mockReturnValueOnce({ action: 'NEXT_QUESTION', say: 'Question two?', questionIndex: 1 });
+    const controller = new InterviewController({ job: sampleJob, speechRecognizer: mockRecognizer, speechSynthesizer: mockSynthesizer, capabilities, nextTurn });
+    controller.grantConsent(); controller.startInterview(); mockSynthesizer._lastCallbacks.onEnd();
+    controller._handleRecognitionResult({ text: 'unfinished thought', interimText: 'unfinished thought', finalText: '', newFinalText: '', sessionId: 1, isFinal: false });
+    controller._handleSilenceTimeout();
+    expect(nextTurn).toHaveBeenCalledTimes(1);
+    controller._handleRecognitionResult({ text: 'finished answer', interimText: '', finalText: 'finished answer', newFinalText: 'finished answer', sessionId: 1, isFinal: true });
+    controller._lastFinalAt = Date.now() - 1000;
+    controller._checksUsed = 1;
+    controller._handleSilenceTimeout();
+    expect(nextTurn).toHaveBeenCalledTimes(2);
+    expect(nextTurn.mock.calls[1][0].transcript.at(-1)).toEqual({ role: 'candidate', text: 'finished answer' });
+  });
+
+  it('does not let a late recognition session overwrite the current answer', () => {
+    const controller = new InterviewController({ job: sampleJob, speechRecognizer: mockRecognizer, speechSynthesizer: mockSynthesizer, capabilities });
+    controller.grantConsent(); controller.startInterview(); mockSynthesizer._lastCallbacks.onEnd();
+    controller._handleRecognitionResult({ text: 'current final', interimText: '', finalText: 'current final', newFinalText: 'current final', sessionId: 2, isFinal: true });
+    controller._handleRecognitionResult({ text: 'stale final', interimText: '', finalText: 'stale final', newFinalText: 'stale final', sessionId: 1, isFinal: true });
+    expect(controller.committedAnswerText).toBe('current final');
+  });
+
+  it('retains multiple final segments and recovers instead of committing an interim-only end', () => {
+    const controller = new InterviewController({ job: sampleJob, speechRecognizer: mockRecognizer, speechSynthesizer: mockSynthesizer, capabilities });
+    controller.grantConsent(); controller.startInterview(); mockSynthesizer._lastCallbacks.onEnd();
+    controller._handleRecognitionResult({ text: 'First sentence.', interimText: '', finalText: 'First sentence.', newFinalText: 'First sentence.', sessionId: 1, isFinal: true });
+    controller._handleRecognitionResult({ text: 'First sentence. Second sentence.', interimText: '', finalText: 'Second sentence.', newFinalText: 'Second sentence.', sessionId: 1, isFinal: true });
+    expect(controller.committedAnswerText).toBe('First sentence. Second sentence.');
+    controller.committedAnswerText = '';
+    controller.interimAnswerText = 'unfinished phrase';
+    controller.currentAnswerDraft = 'unfinished phrase';
+    controller._endpointer._speechStartedAt = Date.now() - 1000;
+    controller._handleRecognitionEnd();
+    expect(controller.getEvents().at(-1)?.type).toBe(EventType.ANSWER_COMMIT_RECOVERED);
+    expect(controller.getSessionRecord().turns[0].answer).toBeUndefined();
+  });
+
+  it('clears the prior answer buffers when a new question is presented', () => {
+    const controller = new InterviewController({ job: sampleJob, speechRecognizer: mockRecognizer, speechSynthesizer: mockSynthesizer, capabilities });
+    controller.committedAnswerText = 'previous answer';
+    controller.interimAnswerText = 'previous interim';
+    controller._speakResult({ say: 'New question', action: 'NEXT_QUESTION', questionIndex: 1 });
+    expect(controller.committedAnswerText).toBe('');
+    expect(controller.interimAnswerText).toBe('');
   });
 
   it('progresses through ordered questions to completion', () => {

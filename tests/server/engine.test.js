@@ -27,9 +27,17 @@ describe('baatcheet engine model chain', () => {
   it('returns quota exhausted when every model is 429', async () => {
     vi.stubGlobal('fetch', vi.fn(() => ({ ok: false, status: 429 }))); const r = await call('/api/questions', { job: { requirements: [{ name: 'r' }] } }); expect(r.body).toEqual({ error: 'gemini_quota_exhausted' });
   });
-  it('forces a follow-up after a short answer', async () => {
+  it('lets the model choose between follow-up and next question for a short answer', async () => {
     let schema; vi.stubGlobal('fetch', vi.fn((url, opt) => { schema = JSON.parse(opt.body).generationConfig.responseSchema; return answer({ action: 'FOLLOW_UP', say: 'What happened next?', requirement: 'r', why: 'detail' }); }));
-    await call('/api/turn', { job: { requirements: [{ name: 'r' }] }, transcript: [{ role: 'interviewer', action: 'INTRO', text: 'Q' }, { role: 'candidate', text: 'one two three' }] }); expect(schema.properties.action.enum).toEqual(['FOLLOW_UP']);
+    await call('/api/turn', { job: { requirements: [{ name: 'r' }] }, transcript: [{ role: 'interviewer', action: 'INTRO', text: 'Q' }, { role: 'candidate', text: 'one two three' }] }); expect(schema.properties.action.enum).toEqual(['FOLLOW_UP', 'NEXT_QUESTION']);
+  });
+  it('does not constrain detailed or irrelevant answers by word count', async () => {
+    const schemas = []; vi.stubGlobal('fetch', vi.fn((url, opt) => { const schema = JSON.parse(opt.body).generationConfig.responseSchema; schemas.push(schema); return answer({ action: 'NEXT_QUESTION', say: 'Next question?', requirement: 'r', why: 'model decision' }); }));
+    const base = [{ role: 'interviewer', action: 'INTRO', text: 'Q' }];
+    await call('/api/turn', { job: { requirements: [{ name: 'r' }] }, transcript: [...base, { role: 'candidate', text: 'A concise but complete answer.' }] });
+    await call('/api/turn', { job: { requirements: [{ name: 'r' }] }, transcript: [...base, { role: 'candidate', text: Array(90).fill('irrelevant').join(' ') }] });
+    expect(schemas[0].properties.action.enum).toEqual(['FOLLOW_UP', 'NEXT_QUESTION']);
+    expect(schemas[1].properties.action.enum).toEqual(['FOLLOW_UP', 'NEXT_QUESTION']);
   });
   it('skips cooled-down models on the next request', async () => {
     const models = []; vi.stubGlobal('fetch', vi.fn((url) => { models.push(url.match(/models\/([^:]+)/)[1]); return models.length === 1 ? { ok: false, status: 429 } : answer({ questions: [] }); }));

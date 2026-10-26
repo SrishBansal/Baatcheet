@@ -28,6 +28,8 @@ import { GeminiReasoner, DeterministicReasoner } from '../analysis/reasoner.js';
 import { nextTurn } from '../data/engineApi.js';
 import { toEngineJob } from './engineJob.js';
 
+export const FINAL_RESULT_SETTLE_MS = 750;
+
 export class InterviewController {
   /**
    * @param {object} options
@@ -80,6 +82,7 @@ export class InterviewController {
     this._postCheckTimer = null;
     this._speechSafetyTimer = null;
     this._recognitionRestartTimer = null;
+    this._answerCommitTimer = null;
     this._recognitionRestartAttempts = 0;
     this.microphoneStalled = false;
     this._awaitingDoneCheck = false;
@@ -201,6 +204,10 @@ export class InterviewController {
     // Live transcription state
     this.interimText = '';
     this.currentAnswerDraft = '';
+    this.committedAnswerText = '';
+    this.interimAnswerText = '';
+    this._recognitionSessionId = null;
+    this._lastFinalAt = 0;
     this.speechErrorMessage = null;
     this.questionStartTime = 0;
     this.questionEndTime = 0;
@@ -541,8 +548,13 @@ export class InterviewController {
     this.questionStartTime = Date.now();
     this.interimText = '';
     this.currentAnswerDraft = '';
+    this.committedAnswerText = '';
+    this.interimAnswerText = '';
+    this._recognitionSessionId = null;
+    this._lastFinalAt = 0;
     this._awaitingDoneCheck = false;
     this._clearPostCheckTimer();
+    this._clearAnswerCommitTimer();
     this.isSubmitting = false;
 
     this._stopAllAudio();
@@ -701,7 +713,10 @@ export class InterviewController {
     }
 
     this.currentAnswerDraft = '';
+    this.committedAnswerText = '';
+    this.interimAnswerText = '';
     this.interimText = '';
+    this._clearAnswerCommitTimer();
 
     if (this.onTranscriptUpdate) {
       this.onTranscriptUpdate(this.eventLog.getTranscript());
@@ -723,6 +738,9 @@ export class InterviewController {
     this.interimText = '';
     this._awaitingDoneCheck = false;
     this._clearPostCheckTimer();
+    this._clearAnswerCommitTimer();
+    this.committedAnswerText = '';
+    this.interimAnswerText = '';
     this._endpointer.cancelTurn();
     if (this.stateMachine.getState() === InterviewState.LISTENING && this.recognizer.isSupported()) {
       this._beginListeningTurn(false);
@@ -965,30 +983,53 @@ export class InterviewController {
     }
   }
 
-  _handleRecognitionResult({ text, isFinal, interimText, finalText }) {
+  _handleRecognitionResult({ text, isFinal, interimText, finalText, newFinalText, sessionId }) {
     if (this.isDestroyed) return;
     if (this.stateMachine.getState() !== InterviewState.LISTENING) return;
 
     if (this._awaitingDoneCheck && isFinal && DONE_PATTERN.test(text || '')) {
       this._clearPostCheckTimer();
       this._awaitingDoneCheck = false;
-      this.submitAnswer(this.currentAnswerDraft);
+      this._submitCommittedAnswer('done_check_confirmation');
       return;
     }
     if (this._awaitingDoneCheck) this._cancelDoneCheck();
-    this.interimText = interimText;
-    this.currentAnswerDraft = text;
+    const recognitionSessionId = sessionId;
+    if (this._recognitionSessionId !== null && recognitionSessionId !== undefined && recognitionSessionId < this._recognitionSessionId) return;
+    if (recognitionSessionId !== undefined) this._recognitionSessionId = recognitionSessionId;
+    const newlyCommitted = newFinalText;
+    if (newlyCommitted !== undefined) {
+      if (newlyCommitted) {
+        this.committedAnswerText = [this.committedAnswerText, newlyCommitted].filter(Boolean).join(' ').trim();
+        this._lastFinalAt = Date.now();
+        this.eventLog.logEvent(EventType.RECOGNITION_FINAL, { questionId: this.currentTurn?.questionId, charCount: newlyCommitted.length });
+      }
+      this.interimAnswerText = interimText || '';
+      this.currentAnswerDraft = [this.committedAnswerText, this.interimAnswerText].filter(Boolean).join(' ').trim();
+    } else if (isFinal) {
+      this.committedAnswerText = String(finalText || text || '').trim();
+      this.interimAnswerText = '';
+      this.currentAnswerDraft = this.committedAnswerText;
+      this._lastFinalAt = Date.now();
+    } else {
+      this.interimAnswerText = String(interimText || text || '').trim();
+      this.currentAnswerDraft = [this.committedAnswerText, this.interimAnswerText].filter(Boolean).join(' ').trim();
+    }
+    this.interimText = this.interimAnswerText;
+    this._clearAnswerCommitTimer();
+    this.eventLog.logEvent(EventType.RECOGNITION_INTERIM, { questionId: this.currentTurn?.questionId, hasFinal: Boolean(this.committedAnswerText), interimChars: this.interimAnswerText.length });
 
     if (this.onInterimSpeech) {
-      this.onInterimSpeech(text);
+      this.onInterimSpeech(this.currentAnswerDraft);
     }
 
     // Feed result into endpointer to reset silence countdown
-    this._endpointer.onRecognitionResult({ text, isFinal });
+    this._endpointer.onRecognitionResult({ text: this.currentAnswerDraft, isFinal });
   }
 
   _handleRecognitionError(err) {
     this.speechErrorMessage = err.message;
+    this.eventLog.logEvent(EventType.RECOGNITION_ERROR, { questionId: this.currentTurn?.questionId, code: err.error || 'unknown' });
     if (err.isPermissionDenied) {
       // Permission denied: automatically switch to text mode
       this.setInputMode('text');
@@ -1003,13 +1044,19 @@ export class InterviewController {
     this.microphoneStalled = false;
     this._recognitionRestartAttempts = 0;
     this._clearRecognitionRestartTimer();
+    this.eventLog.logEvent(EventType.RECOGNITION_STARTED, { questionId: this.currentTurn?.questionId });
   }
 
   _handleRecognitionEnd() {
     this.interimText = '';
     // Notify endpointer: recognition ended; may auto-fire silence timeout if
     // sufficient draft text exists.
-    this._endpointer.onRecognitionEnd(this.currentAnswerDraft);
+    const ended = this._endpointer.onRecognitionEnd(this.currentAnswerDraft);
+    this.eventLog.logEvent(EventType.RECOGNITION_ENDED, { questionId: this.currentTurn?.questionId, hasFinal: Boolean(this.committedAnswerText), hasInterim: Boolean(this.interimAnswerText) });
+    if (ended?.hasSpeech && this.committedAnswerText) this._scheduleCommittedAnswer(FINAL_RESULT_SETTLE_MS, 'recognition_end');
+    if (ended?.hasSpeech && !this.committedAnswerText && this.interimAnswerText) {
+      this.eventLog.logEvent(EventType.ANSWER_COMMIT_RECOVERED, { questionId: this.currentTurn?.questionId, reason: 'interim_only_restart' });
+    }
     if (this.stateMachine.getState() === InterviewState.LISTENING && !this._awaitingDoneCheck && !this.isSubmitting && this.inputMode === 'voice') {
       this._scheduleRecognitionRestart();
     }
@@ -1025,7 +1072,16 @@ export class InterviewController {
     if (this.stateMachine.getState() !== InterviewState.LISTENING) return;
     if (this.isSubmitting) return;
 
-    const draft = (this.currentAnswerDraft || '').trim();
+    const draft = (this.committedAnswerText || '').trim();
+    if (!draft) {
+      if (this.interimAnswerText) this.eventLog.logEvent(EventType.ANSWER_COMMIT_DEFERRED, { questionId: this.currentTurn?.questionId, reason: 'interim_only' });
+      return;
+    }
+    const remainingSettle = Math.max(0, FINAL_RESULT_SETTLE_MS - (Date.now() - this._lastFinalAt));
+    if (remainingSettle > 0) {
+      this._scheduleCommittedAnswer(remainingSettle, 'final_settling');
+      return;
+    }
     if (draft && this.inputMode === 'voice' && this._checksTurnToken === this._endpointer._currentToken && shouldPerformDoneCheck(draft, this._checksUsed)) {
       this._checksUsed += 1;
       this._awaitingDoneCheck = true;
@@ -1040,7 +1096,7 @@ export class InterviewController {
             this._postCheckTimer = null;
             if (this._awaitingDoneCheck) {
               this._awaitingDoneCheck = false;
-              this.submitAnswer(this.currentAnswerDraft);
+              this._submitCommittedAnswer('done_check_silence');
             }
           }, POST_CHECK_SILENCE_MS);
         },
@@ -1053,7 +1109,7 @@ export class InterviewController {
         questionId: this.questionManager.getActivePrompt()?.questionId,
         trigger: 'silence_timeout',
       });
-      this.submitAnswer(draft);
+      this._submitCommittedAnswer('silence_timeout');
     }
     // If no draft: do nothing — candidate may still be thinking.
     // The manual Submit / Skip buttons remain available.
@@ -1061,6 +1117,7 @@ export class InterviewController {
 
   _stopAllAudio() {
     this._clearPostCheckTimer();
+    this._clearAnswerCommitTimer();
     this._clearSpeechSafetyTimer();
     this._clearRecognitionRestartTimer();
     if (this.synthesizer && typeof this.synthesizer.stop === 'function') {
@@ -1098,6 +1155,30 @@ export class InterviewController {
       this._clearTimeout(this._postCheckTimer);
       this._postCheckTimer = null;
     }
+  }
+
+  _scheduleCommittedAnswer(delayMs, reason) {
+    this._clearAnswerCommitTimer();
+    this._answerCommitTimer = this._setTimeout(() => {
+      this._answerCommitTimer = null;
+      if (this.stateMachine.getState() !== InterviewState.LISTENING || this.isSubmitting || !this.committedAnswerText) return;
+      this.eventLog.logEvent(EventType.CANDIDATE_ANSWERED_AUTO, { questionId: this.currentTurn?.questionId, trigger: reason });
+      this._handleSilenceTimeout();
+    }, delayMs);
+  }
+
+  _clearAnswerCommitTimer() {
+    if (this._answerCommitTimer !== null) {
+      this._clearTimeout(this._answerCommitTimer);
+      this._answerCommitTimer = null;
+    }
+  }
+
+  _submitCommittedAnswer(reason) {
+    const text = this.committedAnswerText.trim();
+    if (!text) return false;
+    this.eventLog.logEvent(EventType.CANDIDATE_ANSWERED_AUTO, { questionId: this.currentTurn?.questionId, trigger: reason });
+    return this.submitAnswer(text);
   }
 
   _beginListeningTurn(newTurn) {
