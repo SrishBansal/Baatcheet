@@ -20,6 +20,8 @@
   outline: none;
 }
 
+.select__field{height:38px;border:1px solid var(--surface-sunken);border-radius:var(--radius-input);background:var(--surface);padding:0 14px}.select__field:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);outline:0}
+
 .select__field:hover:not(:disabled) {
   border-color: var(--color-border-strong);
 }

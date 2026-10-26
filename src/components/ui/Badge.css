@@ -59,3 +59,5 @@
   background: var(--color-gray-100);
   color: var(--color-gray-500);
 }
+
+.badge{border-radius:var(--radius-pill);padding:3px 10px 3px 8px;font-size:12px;font-weight:500;gap:6px;background:var(--surface-sunken);color:var(--ink-soft)}.badge::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--ink-faint);flex:none}.badge--success,.badge--active{background:var(--success-soft);color:var(--success)}.badge--success::before,.badge--active::before{background:var(--success)}.badge--warning,.badge--draft{background:var(--warning-soft);color:var(--warning)}.badge--warning::before,.badge--draft::before{background:var(--warning)}.badge--danger{background:var(--danger-soft);color:var(--danger)}.badge--danger::before{background:var(--danger)}.badge--info{background:var(--info-soft);color:var(--info)}.badge--info::before{background:var(--info)}

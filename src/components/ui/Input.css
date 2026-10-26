@@ -76,3 +76,5 @@ textarea.input__field {
   color: var(--color-danger-600);
   margin: 0;
 }
+
+.input__field{height:38px;border:1px solid var(--surface-sunken);border-radius:var(--radius-input);background:var(--surface);padding:0 14px}.input__field:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);outline:0}textarea.input__field{height:auto;padding:var(--s3) 14px}
