@@ -286,7 +286,7 @@ a:hover {
   left: 0;
   bottom: 0;
   width: var(--sidebar-width);
-  background: var(--surface-sunken);
+  background: #eef2ff;
   display: flex;
   flex-direction: column;
   z-index: 100;
