@@ -30,4 +30,17 @@ describe('GeminiReport', () => {
     expect(html).toContain('Hello, I am Baatcheet.');
     expect(html).toContain('Nice to meet you.');
   });
+
+  it('renders an ordered categorical Skills Overview with deterministic bar widths', () => {
+    const html = renderToString(<GeminiReport analysis={{ summary: 'Summary', requirements: [
+      { name: 'React', status: 'demonstrated', reasoning: 'r' },
+      { name: 'Leadership', status: 'not_assessed', reasoning: 'r' },
+    ] }} />);
+
+    expect(html).toContain('Skills Overview');
+    expect(html.indexOf('React')).toBeLessThan(html.indexOf('Leadership'));
+    expect(html).toContain('width:100%');
+    expect(html).toContain('width:0%');
+    expect((html.match(/This shows which requirements were discussed and how clearly, not a numeric skill score/g) || []).length).toBe(1);
+  });
 });

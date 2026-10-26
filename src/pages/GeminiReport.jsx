@@ -1,9 +1,26 @@
 import React from 'react';
+import Badge from '../components/ui/Badge.jsx';
+import { statusVisual } from '../utils/statusVisual.js';
 
 const labels = { demonstrated: 'Demonstrated', partial: 'Partially demonstrated', insufficient: 'Insufficient evidence', not_assessed: 'Not assessed' };
 
 export default function GeminiReport({ analysis, turns = [], candidateName = 'Candidate' }) {
   return <section className="report-section" data-testid="gemini-report">
+    <article className="card skills-overview" aria-labelledby="skills-overview-title">
+      <h2 id="skills-overview-title">Skills Overview</h2>
+      <div className="skills-overview__rows">
+        {(analysis.requirements || []).map((requirement) => {
+          const label = labels[requirement.status] || requirement.status;
+          const { widthPercent, tone } = statusVisual(label);
+          return <div className="skills-overview__row" key={requirement.id || requirement.name}>
+            <span className="skills-overview__name">{requirement.name}</span>
+            <span className="skills-overview__track" aria-hidden="true"><span className={`skills-overview__bar skills-overview__bar--${tone}`} style={{ width: `${widthPercent}%` }} /></span>
+            <Badge variant={tone} size="sm">{label}</Badge>
+          </div>;
+        })}
+      </div>
+      <p className="skills-overview__caption">This shows which requirements were discussed and how clearly, not a numeric skill score. 'Not assessed' means the topic wasn't covered — not a weakness.</p>
+    </article>
     <h2>Assessment</h2><p>{analysis.summary}</p>
     {(analysis.requirements || []).map((r) => <article key={r.id || r.name} className="card">
       <h3>{r.name}</h3><p>{labels[r.status] || r.status}</p><p>{r.reasoning}</p>
