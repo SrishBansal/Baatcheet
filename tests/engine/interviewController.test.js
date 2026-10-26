@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { InterviewController } from '../../src/engine/interviewController.js';
 import { InterviewState } from '../../src/engine/stateMachine.js';
 import { EventType } from '../../src/engine/eventLog.js';
+import { POST_CHECK_SILENCE_MS } from '../../src/engine/endpointing.js';
 
 let defaultMockNextTurn;
 vi.mock('../../src/data/engineApi.js', () => ({
@@ -168,6 +169,69 @@ describe('InterviewController', () => {
     expect(mockSynthesizer.stop).toHaveBeenCalled();
     expect(controller._awaitingDoneCheck).toBe(false);
     expect(mockRecognizer.start).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('keeps the done-check silence window after a recognizer end with zero results', () => {
+    vi.useFakeTimers();
+    const controller = new InterviewController({ job: sampleJob, speechRecognizer: mockRecognizer, speechSynthesizer: mockSynthesizer, capabilities });
+    controller.grantConsent();
+    controller.startInterview();
+    mockSynthesizer._lastCallbacks.onEnd();
+    controller.committedAnswerText = 'Short answer.';
+    controller.currentAnswerDraft = 'Short answer.';
+    controller._lastFinalAt = Date.now() - 1000;
+    controller._handleSilenceTimeout();
+    mockSynthesizer._lastCallbacks.onEnd();
+
+    // Fake SpeechRecognition produces no results, then ends while the candidate thinks.
+    controller._handleRecognitionResult({ text: '   ', isFinal: true, interimText: ' ', finalText: '', newFinalText: '' });
+    controller._handleRecognitionEnd();
+
+    expect(controller._awaitingDoneCheck).toBe(true);
+    expect(controller._postCheckTimer).not.toBeNull();
+    vi.advanceTimersByTime(POST_CHECK_SILENCE_MS - 1);
+    expect(controller.getSessionRecord().turns[0].answer).toBeUndefined();
+    vi.advanceTimersByTime(1);
+    expect(controller.getSessionRecord().turns[0].answer.finalText).toBe('Short answer.');
+    vi.useRealTimers();
+  });
+
+  it('submits a done-check confirmation without storing the confirmation phrase', () => {
+    const controller = new InterviewController({ job: sampleJob, speechRecognizer: mockRecognizer, speechSynthesizer: mockSynthesizer, capabilities });
+    controller.grantConsent();
+    controller.startInterview();
+    mockSynthesizer._lastCallbacks.onEnd();
+    controller.committedAnswerText = 'Short answer.';
+    controller.currentAnswerDraft = 'Short answer.';
+    controller._lastFinalAt = Date.now() - 1000;
+    controller._handleSilenceTimeout();
+    mockSynthesizer._lastCallbacks.onEnd();
+
+    controller._handleRecognitionResult({ text: 'no that is all', isFinal: true, interimText: '', finalText: 'no that is all', newFinalText: 'no that is all' });
+
+    expect(controller.getSessionRecord().turns[0].answer.finalText).toBe('Short answer.');
+    expect(controller.getSessionRecord().turns[0].answer.finalText).not.toContain('no that is all');
+  });
+
+  it('ignores whitespace recognition results during the done-check window', () => {
+    vi.useFakeTimers();
+    const controller = new InterviewController({ job: sampleJob, speechRecognizer: mockRecognizer, speechSynthesizer: mockSynthesizer, capabilities });
+    controller.grantConsent();
+    controller.startInterview();
+    mockSynthesizer._lastCallbacks.onEnd();
+    controller.committedAnswerText = 'Short answer.';
+    controller.currentAnswerDraft = 'Short answer.';
+    controller._lastFinalAt = Date.now() - 1000;
+    controller._handleSilenceTimeout();
+    mockSynthesizer._lastCallbacks.onEnd();
+    const timer = controller._postCheckTimer;
+
+    controller._handleRecognitionResult({ text: '', isFinal: false, interimText: '   ', finalText: '', newFinalText: '' });
+
+    expect(controller._awaitingDoneCheck).toBe(true);
+    expect(controller._postCheckTimer).toBe(timer);
+    expect(controller.currentAnswerDraft).toBe('Short answer.');
     vi.useRealTimers();
   });
 

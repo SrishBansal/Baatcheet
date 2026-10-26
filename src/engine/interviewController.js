@@ -987,6 +987,12 @@ export class InterviewController {
     if (this.isDestroyed) return;
     if (this.stateMachine.getState() !== InterviewState.LISTENING) return;
 
+    const hasRecognitionText = [text, interimText, finalText, newFinalText]
+      .some((value) => String(value || '').trim());
+    // Browser recognition can emit an empty result before onend. It is not speech,
+    // so it must not cancel the active done-check silence window.
+    if (!hasRecognitionText) return;
+
     if (this._awaitingDoneCheck && isFinal && DONE_PATTERN.test(text || '')) {
       this._clearPostCheckTimer();
       this._awaitingDoneCheck = false;
@@ -1049,6 +1055,9 @@ export class InterviewController {
 
   _handleRecognitionEnd() {
     this.interimText = '';
+    // During the post-check window the buffered answer belongs to the preceding
+    // utterance. A no-result recognition end must leave its five-second timer intact.
+    if (this._awaitingDoneCheck) return;
     // Notify endpointer: recognition ended; may auto-fire silence timeout if
     // sufficient draft text exists.
     const ended = this._endpointer.onRecognitionEnd(this.currentAnswerDraft);
