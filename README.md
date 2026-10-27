@@ -2,7 +2,7 @@
 
 **Voice-first screening interviews, with a report where every claim has to point at something the candidate actually said.**
 
-Live demo: `https://baatcheet-livid.vercel.app/`
+Live demo: [`https://baatcheet-livid.vercel.app/`]
 
 A recruiter pastes in a job posting. Baatcheet pulls out the requirements, suggests screening questions, and lets a candidate have a short spoken interview with an AI interviewer in the browser. Afterwards the recruiter gets a report that says, per requirement, how well it was demonstrated, backed by verbatim quotes that the server has checked against the transcript.
 
