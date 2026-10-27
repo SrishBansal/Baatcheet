@@ -2,10 +2,14 @@ import React from 'react';
 import Badge from '../components/ui/Badge.jsx';
 import { statusVisual } from '../utils/statusVisual.js';
 
+// Server returns 'Not assessed' / 'Partially demonstrated'; older fixtures use snake_case keys. Accept both.
+const statusKey = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, '_');
 const labels = { demonstrated: 'Demonstrated', partial: 'Partially demonstrated', insufficient: 'Insufficient evidence', not_assessed: 'Not assessed' };
 
 export default function GeminiReport({ analysis, turns = [], candidateName = 'Candidate' }) {
   const modelName = analysis.model || 'Gemini';
+  const dropped = analysis.droppedQuotes;
+  const droppedCount = Array.isArray(dropped) ? dropped.length : Number(dropped) || 0;
   const generatedTime = analysis.generatedAt ? new Date(analysis.generatedAt).toLocaleString() : 'Recently';
 
   return <section className="report-section" data-testid="gemini-report">
@@ -16,7 +20,7 @@ export default function GeminiReport({ analysis, turns = [], candidateName = 'Ca
         <h2 id="skills-overview-title">Skills Overview</h2>
         <div className="skills-overview__rows">
           {(analysis.requirements || []).map((requirement) => {
-            const label = labels[requirement.status] || requirement.status;
+            const label = labels[statusKey(requirement.status)] || requirement.status;
             const { widthPercent, tone } = statusVisual(label);
             return <div className="skills-overview__row" key={requirement.id || requirement.name}>
               <span className="skills-overview__name">{requirement.name}</span>
@@ -38,13 +42,13 @@ export default function GeminiReport({ analysis, turns = [], candidateName = 'Ca
         <h2 id="requirements-analysis-title">Requirement Analysis</h2>
         <div className="report-analysis__details">
           {(analysis.requirements || []).map((r) => <article key={r.id || r.name} className="card">
-            <h3>{r.name}</h3><p>{labels[r.status] || r.status}</p><p>{r.reasoning}</p>
+            <h3>{r.name}</h3><p>{labels[statusKey(r.status)] || r.status}</p><p>{r.reasoning}</p>
             {(r.quotes || r.evidence || []).map((q, i) => <blockquote key={i}>{q}</blockquote>)}
-            {r.missing && <p>Missing: {r.missing}</p>}{r.downgraded && <p>Evidence downgraded</p>}
-            {r.status === 'not_assessed' && <p>Not covered in this interview. Not a negative finding.</p>}
+            {r.missing && <p>Missing: {r.missing}</p>}{(r.flag || r.downgraded) && <p>{r.flag || 'Evidence downgraded'}</p>}
+            {statusKey(r.status) === 'not_assessed' && <p>Not covered in this interview. Not a negative finding.</p>}
           </article>)}
         </div>
-        {analysis.droppedQuotes?.length > 0 && <p>{analysis.droppedQuotes.length} unverifiable quote(s) removed</p>}
+        {droppedCount > 0 && <p>{droppedCount} unverifiable quote(s) removed</p>}
       </section>
     </section>
 
