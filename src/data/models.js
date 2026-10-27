@@ -1,5 +1,5 @@
 /**
- * Data models for HirePilot AI.
+ * Data models for Baatcheet.
  *
  * These are plain-object factory functions (not classes) to keep
  * serialisation to/from localStorage straightforward.

@@ -3,12 +3,11 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Baatcheet — Browser-based AI-assisted candidate screening system",
+  "description": "Baatcheet: voice-first AI screening interviews with evidence-checked reports",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "server": "node --env-file=.env.local server/index.js",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -21,5 +20,8 @@
     "@vitejs/plugin-react": "^4.5.2",
     "vite": "^6.3.5",
     "vitest": "^3.2.1"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

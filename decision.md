@@ -1,6 +1,8 @@
-# HirePilot AI — Architecture Decision Record (ADR)
+# Baatcheet — Architecture Decision Record (ADR)
 
-**Project:** HirePilot AI (workspace: Baatcheet)
+   > Historical decision log. The README describes the current system.
+   
+**Project:** Baatcheet (workspace: Baatcheet)
 **Created:** 2026-10-24
 **Last updated:** 2026-10-24
 
@@ -22,7 +24,7 @@
 - **Status:** Accepted
 - **Date:** 2026-10-24
 - **Context:** The project needs a clear boundary to prevent scope creep into generic chatbot, autonomous hiring, outbound calling, or n8n-based workflow territory.
-- **Decision:** HirePilot AI is a browser-based, AI-assisted candidate screening system that conducts structured voice interviews, records transcripts, and generates evidence-backed reports for recruiters. It is not a generic chatbot, an autonomous hiring/rejection system, a Streamlit app, a static dashboard with fake data, a thin LLM wrapper, an outbound telephone system, or an n8n-based application.
+- **Decision:** Baatcheet is a browser-based, AI-assisted candidate screening system that conducts structured voice interviews, records transcripts, and generates evidence-backed reports for recruiters. It is not a generic chatbot, an autonomous hiring/rejection system, a Streamlit app, a static dashboard with fake data, a thin LLM wrapper, an outbound telephone system, or an n8n-based application.
 - **Alternatives considered:** Building a general-purpose interview assistant or a fully autonomous screening pipeline.
 - **Rationale:** The product specification explicitly defines what the product is and is not. A constrained scope ensures each feature is built properly rather than superficially.
 - **Trade-offs and risks:** Narrower scope limits initial market appeal but produces a more trustworthy, auditable product.

@@ -1,5 +1,5 @@
 /**
- * Adaptive Reasoners for HirePilot AI.
+ * Adaptive Reasoners for Baatcheet.
  * Implements GeminiReasoner with client timeout and strict validation,
  * with graceful fallback to DeterministicReasoner.
  */
